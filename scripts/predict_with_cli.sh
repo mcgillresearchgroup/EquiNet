@@ -1,6 +1,6 @@
 equinet_path=path/to/equinet
 
-python $chemprop_path/predict.py \
+python $equinet_path/predict.py \
 --test_path example_test.csv \
 --features_path example_features.csv \
 --preds_path example_output.csv \
