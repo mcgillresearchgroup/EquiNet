@@ -1329,7 +1329,6 @@ def build_uncertainty_predictor(
         "evidential_epistemic": EvidentialEpistemicPredictor,
         "evidential_aleatoric": EvidentialAleatoricPredictor,
         "dropout": DropoutPredictor,
-        "spectra_roundrobin": RoundRobinSpectraPredictor,
         "dirichlet":  DirichletPredictor,
     }
 
