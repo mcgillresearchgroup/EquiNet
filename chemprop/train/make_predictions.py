@@ -28,9 +28,6 @@ def load_model(args: PredictArgs, generator: bool = False):
     train_args = load_args(args.checkpoint_paths[0])
     num_tasks, task_names = train_args.num_tasks, train_args.task_names
 
-    update_prediction_args(predict_args=args, train_args=train_args)
-    args: Union[PredictArgs, TrainArgs]
-
     # Load model and scalers
     models = (
         load_checkpoint(checkpoint_path, device=args.device) for checkpoint_path in args.checkpoint_paths
@@ -42,7 +39,7 @@ def load_model(args: PredictArgs, generator: bool = False):
         models = list(models)
         scalers = list(scalers)
 
-    return args, train_args, models, scalers, num_tasks, task_names
+    return train_args, models, scalers, num_tasks, task_names
 
 
 def load_data(args: PredictArgs, smiles: List[List[str]]):
@@ -379,7 +376,6 @@ def make_predictions(
     """
     if model_objects:
         (
-            args,
             train_args,
             models,
             scalers,
@@ -388,18 +384,19 @@ def make_predictions(
         ) = model_objects
     else:
         (
-            args,
             train_args,
             models,
             scalers,
             num_tasks,
             task_names,
         ) = load_model(args, generator=True)
-    
+
+    update_prediction_args(predict_args=args, train_args=train_args)
+    args: Union[PredictArgs, TrainArgs]
+
     if args.vle is not None:
         task_names = ["y1","y2","log10P","ln_gamma_1", "ln_gamma_2", "log10p1sat", "log10p2sat"]
         num_tasks = 7
-
 
     num_models = len(args.checkpoint_paths)
 
