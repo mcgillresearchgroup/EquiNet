@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-
+from typing import Tuple
 
 def forward_vle_basic(
         output: torch.Tensor,
@@ -219,6 +219,64 @@ def forward_vle_nrtl_wohl(
     ln_gamma_2 = ln_gamma_2_nrtl + ln_gamma_2_wohl
 
     return ln_gamma_1, ln_gamma_2
+
+def _gE_over_RT_from_ln_gamma(ln_gamma_1: torch.Tensor,
+                              ln_gamma_2: torch.Tensor,
+                              x1: torch.Tensor,
+                              x2: torch.Tensor) -> torch.Tensor:
+    # Consistent with excess-Gibbs definition for activity models
+    return x1 * ln_gamma_1 + x2 * ln_gamma_2
+
+def wohl_ln_gamma_and_gE(
+    output: torch.Tensor,
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    q1: torch.Tensor,
+    q2: torch.Tensor,
+    wohl_order: int
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ln1, ln2 = forward_vle_wohl(output, wohl_order, x1, x2, q1, q2)
+    gE_over_RT = _gE_over_RT_from_ln_gamma(ln1, ln2, x1, x2)
+    return ln1, ln2, gE_over_RT
+
+def nrtl_wohl_ln_gamma_and_gE(
+    output: torch.Tensor,
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    q1: torch.Tensor,
+    q2: torch.Tensor,
+    wohl_order: int
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # Uses your hybrid lnγ (NRTL + Wohl), then derives gE/RT by x·lnγ consistency
+    ln1, ln2 = forward_vle_nrtl_wohl(output, x1, x2, q1, q2, wohl_order)
+    gE_over_RT = _gE_over_RT_from_ln_gamma(ln1, ln2, x1, x2)
+    return ln1, ln2, gE_over_RT
+
+
+def nrtl_ln_gamma_and_gE(
+    output: torch.Tensor, x1: torch.Tensor, x2: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Closed-form NRTL lnγ and gE/RT for a binary.
+    output: [N,3] -> [tau12, tau21, alpha_raw]
+    x1,x2 : [N,1]  (use the SAME x for all permutations, as you said)
+    returns: ln_gamma_1, ln_gamma_2, gE_over_RT  (each [N,1])
+    """
+    tau12, tau21, alpha_raw = torch.chunk(output, 3, dim=1)
+    alpha = torch.sigmoid(alpha_raw)                 # α in (0,1)
+    G12 = torch.exp(-alpha * tau12)
+    G21 = torch.exp(-alpha * tau21)
+
+    # gE/RT
+    gE_over_RT = x1 * x2 * (tau21 * G21 / (x1 + x2 * G21) + tau12 * G12 / (x2 + x1 * G12))
+
+    # NRTL lnγ (standard two-parameter form with α)
+    ln_gamma_1 = x2**2 * (tau21 * (G21 / (x1 + x2 * G21))**2 + tau12 * G12 / (x2 + x1 * G12)**2)
+    ln_gamma_2 = x1**2 * (tau12 * (G12 / (x2 + x1 * G12))**2 + tau21 * G21 / (x1 + x2 * G21)**2)
+
+    return ln_gamma_1, ln_gamma_2, gE_over_RT
+
+
 
 def get_nrtl_wohl_parameters(
     output: torch.Tensor,
