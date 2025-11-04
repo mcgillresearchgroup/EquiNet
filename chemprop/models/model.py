@@ -603,16 +603,17 @@ class MoleculeModel(nn.Module):
             elif self.vle == "freestyle":
                 output = output - x_1 * output_1 - x_2 * output_2  # gE
                 ln_gamma_1, ln_gamma_2 = forward_vle_freestyle(output=output, features=features_batch)
-                # if self.self_activity_correction or self.self_activity_lambda > 0:
-                #     ln_gamma_1_1, ln_gamma_2_1 = forward_vle_freestyle(output=output_1, features=features_batch)
-                #     ln_gamma_1_2, ln_gamma_2_2 = forward_vle_freestyle(output=output_2, features=features_batch)
+                if self.self_activity_lambda > 0:
+                        regularization = self.self_activity_lambda * (
+                            output_1.pow(2).sum() + output_2.pow(2).sum()
+                        )
             else:
                 raise ValueError(f"Unsupported VLE model {self.vle}.")
             
-            if self.self_activity_correction and self.vle not in ["nrtl", "wohl", "nrtl-wohl"]:
+            if self.self_activity_correction and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle"]:
                 ln_gamma_1 = ln_gamma_1 - x_1 * ln_gamma_1_1 - x_2 * ln_gamma_1_2
                 ln_gamma_2 = ln_gamma_2 - x_1 * ln_gamma_2_1 - x_2 * ln_gamma_2_2
-            if self.self_activity_lambda > 0 and self.vle not in ["nrtl", "wohl", "nrtl-wohl"]:
+            if self.self_activity_lambda > 0 and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle"]:
                 regularization = self.self_activity_lambda * (
                     torch.sum(ln_gamma_1_1**2) + torch.sum(ln_gamma_1_2**2) +
                     torch.sum(ln_gamma_2_1**2) + torch.sum(ln_gamma_2_2**2)
