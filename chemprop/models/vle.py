@@ -277,6 +277,21 @@ def nrtl_ln_gamma_and_gE(
     return ln_gamma_1, ln_gamma_2, gE_over_RT
 
 
+def uniquac_ln_gamma_and_gE(
+    output: torch.Tensor,
+    q1: torch.Tensor,
+    q2: torch.Tensor,
+    r1: torch.Tensor,
+    r2: torch.Tensor,
+    x_1: torch.Tensor,
+    x_2: torch.Tensor,
+    z: torch.Tensor,
+):
+    ln_gamma_1, ln_gamma_2 = forward_vle_uniquac(output, q1, q2, r1, r2, x_1, x_2, z)
+    gE_over_RT = _gE_over_RT_from_ln_gamma(ln_gamma_1, ln_gamma_2, x_1, x_2)
+
+    return ln_gamma_1, ln_gamma_2, gE_over_RT
+
 
 def get_nrtl_wohl_parameters(
     output: torch.Tensor,
@@ -294,50 +309,38 @@ def get_nrtl_wohl_parameters(
         names = [f"{name}_{molecule_id}" for name in names]
     return names, parameters
 
+
 def forward_vle_uniquac(
-    uniquac_params: torch.Tensor,
+    output: torch.Tensor,
+    q1: torch.Tensor,
+    q2: torch.Tensor,
+    r1: torch.Tensor,
+    r2: torch.Tensor,
     x_1: torch.Tensor,
     x_2: torch.Tensor,
-    T: torch.Tensor,
-    Z: torch.Tensor
+    z: torch.Tensor,
 ):
     """
     VLE output calculation for the UNIQUAC model
     """
-    tau12, tau21, r1, r2, q1, q2 = torch.chunk(uniquac_params, 6, dim=1)
+    # (output, q1, q2, r1, r2, x_1, x_2, z)
+    lntau12, lntau21 = torch.chunk(output, 6, dim=1)
+    tau12 = torch.exp(lntau12)
+    tau21 = torch.exp(lntau21)
     
-    # Apply softplus to tau values to ensure they are positive
-    tau12 = F.softplus(tau12)
-    tau21 = F.softplus(tau21)
+    theta1 = (q1 * x_1) / (q1 * x_1 + q2 * x_2)
+    theta2 = (q2 * x_2) / (q1 * x_1 + q2 * x_2)
+    phi1 = (r1 * x_1) / (r1 * x_1 + r2 * x_2)
+    phi2 = (r2 * x_2) / (r1 * x_1 + r2 * x_2)
 
-  # Ensure r, q are positive and not too small
-    r1, r2, q1, q2 = [torch.clamp(param, min=0.1, max=100) for param in [r1, r2, q1, q2]]
-    
-    # Calculate structural parameters
-    l1 = (Z / 2) * (r1 - q1) - (r1 - 1)
-    l2 = (Z / 2) * (r2 - q2) - (r2 - 1)
-    
-    # Calculate area and volume fractions
-    theta1 = x_1 * q1 / (x_1 * q1 + x_2 * q2)
-    theta2 = x_2 * q2 / (x_1 * q1 + x_2 * q2)
-    phi1 = x_1 * r1 / (x_1 * r1 + x_2 * r2)
-    phi2 = x_2 * r2 / (x_1 * r1 + x_2 * r2)
-    
-    # Calculate taus using the correct equation
-    R = 8.314  # J/(mol·K)
+    l1 = z/2 * (r1 - q1) - (r1 - 1)
+    l2 = z/2 * (r2 - q2) - (r2 - 1)
 
-   # Calculate activity coefficients
-    ln_gamma1_c = torch.log(r1 / (x_1 * r1 + x_2 * r2)) - (Z / 2) * q1 * torch.log((r1 * (x_1 * q1 + x_2 * q2)) / ((x_1 * r1 + x_2 * r2) * q1)) + l1 - (r1 / (x_1 * r1 + x_2 * r2)) * x_1 * l1 + x_2 * l2
-    ln_gamma1_r = q1 * (1 - torch.log(theta1 + theta2 * tau21) - (theta1 * tau12 / (theta1 + theta2 * tau21)))
+    ln_gamma1 = torch.log(phi1 / x_1) + (z/2) * q1 * torch.log(theta1 / phi1) + phi2 * (l1 - r1 / r2 * l2) - q1 * torch.log(theta1 + theta2 * tau21) + theta2 * q1 * (tau21 / (theta1 + theta2 * tau21) - tau12 / (theta2 + theta1 * tau12))
+    ln_gamma2 = torch.log(phi2 / x_2) + (z/2) * q2 * torch.log(theta2 / phi2) + phi1 * (l2 - r2 / r1 * l1) - q2 * torch.log(theta2 + theta1 * tau12) + theta1 * q2 * (tau12 / (theta2 + theta1 * tau12) - tau21 / (theta1 + theta2 * tau21))
 
-    ln_gamma2_c = torch.log(r2 / (x_1 * r1 + x_2 * r2)) + (Z / 2) * q2 * torch.log((r2 * (x_1 * q1 + x_2 * q2)) / ((x_1 * r1 + x_2 * r2) * q2)) + l2 - (r2 / (x_1 * q1 + x_2 * r2)) * x_1 * l1 + x_2 * l2
-    ln_gamma2_r = q2 * (1 - torch.log(theta2 + theta1 * tau12) - (theta2 * tau21 / (theta2 + theta1 * tau12)))
-
-    # Clamp ln_gamma values to prevent extreme values
-    ln_gamma1 = torch.clamp(ln_gamma1_c + ln_gamma1_r, min=-50, max=50)
-    ln_gamma2 = torch.clamp(ln_gamma2_c + ln_gamma2_r, min=-50, max=50)
-    
     return ln_gamma1, ln_gamma2
+
 
 def get_uniquac_parameters(
     output: torch.Tensor,
