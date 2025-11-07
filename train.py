@@ -1,7 +1,7 @@
-"""Trains a chemprop model on a dataset."""
+"""Trains a equinet model on a dataset."""
 
-from chemprop.train import chemprop_train
+from equinet.train import equinet_train
 
 
 if __name__ == '__main__':
-    chemprop_train()
+    equinet_train()

@@ -1,6 +1,6 @@
-"""Loads a trained chemprop model checkpoint and makes predictions on a dataset."""
+"""Loads a trained equinet model checkpoint and makes predictions on a dataset."""
 
-from chemprop.train import chemprop_predict
+from equinet.train import equinet_predict
 
 if __name__ == '__main__':
-    chemprop_predict()
+    equinet_predict()

@@ -1,6 +1,6 @@
 """Optimizes hyperparameters using Bayesian optimization."""
 
-from chemprop.hyperparameter_optimization import chemprop_hyperopt
+from equinet.hyperparameter_optimization import equinet_hyperopt
 
 if __name__ == '__main__':
-    chemprop_hyperopt()
+    equinet_hyperopt()
