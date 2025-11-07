@@ -5,7 +5,8 @@ from typing import Dict, List
 
 import numpy as np
 import warnings
-warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning) 
+from numpy.exceptions import VisibleDeprecationWarning
+warnings.filterwarnings("ignore", category=VisibleDeprecationWarning)
 import pandas as pd
 from tensorboardX import SummaryWriter
 import torch

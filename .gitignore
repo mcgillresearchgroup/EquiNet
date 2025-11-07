@@ -6,6 +6,6 @@
 *.pt
 *.json
 *.sqlite3
-chemprop.egg-info
+equinet.egg-info
 docs/build
 dist/*

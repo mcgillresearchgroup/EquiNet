@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 
-from sklearn.metrics import auc, mean_absolute_error, mean_squared_error, precision_recall_curve, r2_score, \
+from sklearn.metrics import auc, mean_absolute_error, root_mean_squared_error, precision_recall_curve, r2_score, \
     roc_auc_score, accuracy_score, log_loss, f1_score, matthews_corrcoef, recall_score, precision_score, \
     balanced_accuracy_score
 
@@ -149,7 +149,7 @@ def rmse(targets: List[float], preds: List[float]) -> float:
     :param preds: A list of predictions.
     :return: The computed rmse.
     """
-    return mean_squared_error(targets, preds, squared=False)
+    return root_mean_squared_error(targets, preds)
 
 
 def bounded_rmse(targets: List[float], preds: List[float], gt_targets: List[bool] = None,
@@ -175,7 +175,7 @@ def bounded_rmse(targets: List[float], preds: List[float], gt_targets: List[bool
         targets,
         preds,
     )
-    return mean_squared_error(targets, preds, squared=False)
+    return root_mean_squared_error(targets, preds)
 
 
 def bounded_mse(targets: List[float], preds: List[float], gt_targets: List[bool] = None,
@@ -201,7 +201,7 @@ def bounded_mse(targets: List[float], preds: List[float], gt_targets: List[bool]
         targets,
         preds,
     )
-    return mean_squared_error(targets, preds, squared=True)
+    return root_mean_squared_error(targets, preds)
 
 
 def bounded_mae(targets: List[float], preds: List[float], gt_targets: List[bool] = None,
