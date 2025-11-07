@@ -11,14 +11,7 @@ from chemprop.args import TrainArgs
 from chemprop.features import BatchMolGraph
 from chemprop.nn_utils import initialize_weights
 from .vp import forward_vp, get_vp_parameter_names
-from .vle import forward_vle_basic, forward_vle_activity, forward_vle_wohl, forward_vle_nrtl, forward_vle_nrtl_wohl, get_wohl_parameters, get_nrtl_parameters, get_nrtl_wohl_parameters, forward_vle_uniquac, get_uniquac_parameters, get_activity_parameters, forward_vle_freestyle, nrtl_ln_gamma_and_gE
-from .vle import (
-    forward_vle_basic, forward_vle_activity, forward_vle_wohl, forward_vle_nrtl,
-    forward_vle_nrtl_wohl, get_wohl_parameters, get_nrtl_parameters,
-    get_nrtl_wohl_parameters, forward_vle_uniquac, get_uniquac_parameters,
-    get_activity_parameters, forward_vle_freestyle, nrtl_ln_gamma_and_gE,
-    wohl_ln_gamma_and_gE, nrtl_wohl_ln_gamma_and_gE
-)
+from .vle import forward_vle_basic, forward_vle_activity, forward_vle_wohl, forward_vle_nrtl, forward_vle_nrtl_wohl, get_wohl_parameters, get_nrtl_parameters, get_nrtl_wohl_parameters, forward_vle_uniquac, get_uniquac_parameters, get_activity_parameters, forward_vle_freestyle, nrtl_ln_gamma_and_gE, uniquac_ln_gamma_and_gE
 
 from typing import Tuple
 class MoleculeModel(nn.Module):
@@ -79,7 +72,7 @@ class MoleculeModel(nn.Module):
 
         if self.binary_equivariant:
             if self.vle == "uniquac":
-                self.output_equivariant_pairs = [(0,1), (2,3), (4,5), (6,7)]  # u12-u21, u11-u22, r1-r2, q1-q2
+                self.output_equivariant_pairs = [(0,1)]  # lntau12, lntau21
                 self.features_equivariant_pairs = []  # T
             elif self.vle == "wohl":
                 if self.wohl_order == 2: # a12; a112, a122; a1112, a1122, a1222; a11112, a11122, a11222, a12222
@@ -381,7 +374,16 @@ class MoleculeModel(nn.Module):
         if self.vle == "uniquac":
             r1, q1 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_1, input_temperature_batch], dim=1))), 2, dim=1)
             r2, q2 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_2, input_temperature_batch], dim=1))), 2, dim=1)
-       
+        if self.learn_uniquac_z:
+            z = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(encodings))) + 4  # Ensure Z is a positive integer >= 8
+            if self.self_activity_correction:
+                z1 = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_1, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
+                z2 = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_2, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
+        else:
+            z = self.uniquac_z
+            z1 = self.uniquac_z
+            z2 = self.uniquac_z
+
         if self.vle is not None and self.vp is not None: # internal VP prediction
             vp1_output = self.intrinsic_vp(torch.cat([encoding_1, input_temperature_batch], axis=1))
             vp2_output = self.intrinsic_vp(torch.cat([encoding_2, input_temperature_batch], axis=1))
@@ -586,20 +588,34 @@ class MoleculeModel(nn.Module):
                     ln_gamma_1, ln_gamma_2 = ln1_ab, ln2_ab
 
             elif self.vle == "uniquac":
-                if self.learn_uniquac_z:
-                    Z = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(encodings))) + 8  # Ensure Z is a positive integer >= 8
-                else:
-                    Z = torch.full((len(output), 1), self.uniquac_z, device=self.device)
-                
-                tau12, tau21 = torch.chunk(nn.functional.softplus(output), 2, dim=1)  # Apply softplus to ensure positive tau values
-                r1, q1 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_1, input_temperature_batch], dim=1))), 2, dim=1)
-                r2, q2 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_2, input_temperature_batch], dim=1))), 2, dim=1)
-                uniquac_params = torch.cat([tau12, tau21, r1, r2, q1, q2], dim=1)
-                ln_gamma_1, ln_gamma_2 = forward_vle_uniquac(uniquac_params, x_1, x_2, input_temperature_batch, Z)
+                ln1_ab, ln2_ab, gE_ab = uniquac_ln_gamma_and_gE(output, q1, q2, r1, r2, x_1, x_2, z)
                 
                 if self.self_activity_correction or self.self_activity_lambda > 0:
-                    ln_gamma_1_1, ln_gamma_2_1 = forward_vle_uniquac(uniquac_params, x_1, x_1, input_temperature_batch, Z)
-                    ln_gamma_1_2, ln_gamma_2_2 = forward_vle_uniquac(uniquac_params, x_2, x_2, input_temperature_batch, Z)
+                    ln1_aa, ln2_aa, gE_aa = uniquac_ln_gamma_and_gE(output, q1, q1, r1, r1, x_1, x_2, z1)
+                    ln1_bb, ln2_bb, gE_bb = uniquac_ln_gamma_and_gE(output, q2, q2, r2, r2, x_1, x_2, z2)
+
+                    ln_gamma_1 = (
+                        ln1_ab
+                        - x_2 * gE_aa
+                        - x_1 * ln1_aa
+                        + x_2 * gE_bb
+                        - x_2 * ln1_bb
+                    )
+                    ln_gamma_2 = (
+                        ln2_ab
+                        + x_1 * gE_aa
+                        - x_1 * ln2_aa
+                        - x_1 * gE_bb
+                        - x_2 * ln2_bb
+                    )
+                    # Optional regularizer (at gE-level)
+                    if self.self_activity_lambda > 0:
+                        regularization = self.self_activity_lambda * (gE_aa.pow(2).sum() + gE_bb.pow(2).sum())
+                else:
+                    # No self-correction → use AB closed-form lnγ directly
+                    ln_gamma_1, ln_gamma_2 = ln1_ab, ln2_ab
+
+
             elif self.vle == "freestyle":
                 output = output - x_1 * output_1 - x_2 * output_2  # gE
                 ln_gamma_1, ln_gamma_2 = forward_vle_freestyle(output=output, features=features_batch)
@@ -610,10 +626,10 @@ class MoleculeModel(nn.Module):
             else:
                 raise ValueError(f"Unsupported VLE model {self.vle}.")
             
-            if self.self_activity_correction and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle"]:
+            if self.self_activity_correction and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac"]:
                 ln_gamma_1 = ln_gamma_1 - x_1 * ln_gamma_1_1 - x_2 * ln_gamma_1_2
                 ln_gamma_2 = ln_gamma_2 - x_1 * ln_gamma_2_1 - x_2 * ln_gamma_2_2
-            if self.self_activity_lambda > 0 and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle"]:
+            if self.self_activity_lambda > 0 and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac"]:
                 regularization = self.self_activity_lambda * (
                     torch.sum(ln_gamma_1_1**2) + torch.sum(ln_gamma_1_2**2) +
                     torch.sum(ln_gamma_2_1**2) + torch.sum(ln_gamma_2_2**2)
