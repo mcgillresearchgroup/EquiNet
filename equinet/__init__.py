@@ -12,5 +12,6 @@ import equinet.nn_utils
 import equinet.utils
 import equinet.rdkit
 import equinet.hyperopt_utils
+from equinet._version import __version__
 
-__version__ = "1.6.1"
+__all__ = ["__version__"]
