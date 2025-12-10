@@ -1,7 +1,7 @@
 from collections import OrderedDict
 import csv
 from typing import List, Optional, Union, Tuple
-
+from packaging import version
 import numpy as np
 
 from equinet.args import PredictArgs, TrainArgs
@@ -11,6 +11,69 @@ from equinet.features import set_extra_atom_fdim, set_extra_bond_fdim, set_react
 from equinet.models import MoleculeModel
 from equinet.uncertainty import UncertaintyCalibrator, build_uncertainty_calibrator, UncertaintyEstimator, build_uncertainty_evaluator
 from equinet.multitask_utils import reshape_values
+
+
+MIN_SELF_ACTIVITY_VERSION = version.parse("0.2.0")
+
+def _ensure_checkpoint_versions_ok(predict_args) -> None:
+    """
+    Enforces version compatibility when self_activity_correction=True.
+    If a checkpoint lacks a version tag OR has a version < 0.2.0,
+    a clear, human-readable error is raised.
+    """
+
+    # If self-activity correction is OFF, allow all checkpoint versions
+    if not getattr(predict_args, "self_activity_correction", False):
+        return
+
+    for cp in predict_args.checkpoint_paths:
+        ta = load_args(cp)
+
+        # -------------------------------
+        # 1. Missing version tag entirely
+        # -------------------------------
+        if not hasattr(ta, "version"):
+            raise RuntimeError(
+                f"Incompatible EquiNet checkpoint:\n"
+                f"  Path: {cp}\n"
+                f"  Problem: This checkpoint does not contain a 'version' tag.\n\n"
+                f"This usually means it was trained with a pre-0.2.0 EquiNet codebase, "
+                f"which is not compatible with self_activity_correction.\n\n"
+                f"Please re-save or retrain this model with EquiNet ≥ 0.2.0,\n"
+                f"or disable self_activity_correction."
+            )
+
+        ckpt_ver = ta.version
+
+        # ------------------------------------------
+        # 2. Version tag present but unparsable/odd
+        # ------------------------------------------
+        try:
+            parsed = version.parse(str(ckpt_ver))
+        except Exception:
+            raise RuntimeError(
+                f"Incompatible EquiNet checkpoint:\n"
+                f"  Path: {cp}\n"
+                f"  Problem: The version tag '{ckpt_ver}' could not be interpreted.\n\n"
+                f"Expected a semantic version string (e.g., '0.2.0').\n"
+                f"Please re-save this model with a proper version tag."
+            )
+
+        # ------------------------------
+        # 3. Version too old (< 0.2.0)
+        # ------------------------------
+        if parsed < MIN_SELF_ACTIVITY_VERSION:
+            raise RuntimeError(
+                f"Incompatible EquiNet checkpoint:\n"
+                f"  Path: {cp}\n"
+                f"  Found version: {ckpt_ver}\n"
+                f"  Minimum required: {MIN_SELF_ACTIVITY_VERSION}\n\n"
+                f"This checkpoint predates the new activity-correction logic and "
+                f"cannot be safely used.\n"
+                f"Please re-save or retrain the model using EquiNet ≥ 0.2.0."
+            )
+
+
 
 
 def load_model(args: PredictArgs, generator: bool = False):
@@ -24,22 +87,31 @@ def load_model(args: PredictArgs, generator: bool = False):
     :return: A tuple of updated prediction arguments, training arguments, a list or generator object of models, a list or 
                  generator object of scalers, the number of tasks and their respective names.
     """
+
+    # 1) Enforce version compatibility if self-activity correction is on
+    _ensure_checkpoint_versions_ok(args)
+
+    # 2) Load training args from the first checkpoint (used for num_tasks, task_names)
     print('Loading training args')
     train_args = load_args(args.checkpoint_paths[0])
     num_tasks, task_names = train_args.num_tasks, train_args.task_names
 
-    # Load model and scalers
+    # 3) Load model(s) and scaler(s)
     models = (
-        load_checkpoint(checkpoint_path, device=args.device) for checkpoint_path in args.checkpoint_paths
+        load_checkpoint(checkpoint_path, device=args.device)
+        for checkpoint_path in args.checkpoint_paths
     )
     scalers = (
-        load_scalers(checkpoint_path) for checkpoint_path in args.checkpoint_paths
+        load_scalers(checkpoint_path)
+        for checkpoint_path in args.checkpoint_paths
     )
+
     if not generator:
         models = list(models)
         scalers = list(scalers)
 
     return train_args, models, scalers, num_tasks, task_names
+
 
 
 def load_data(args: PredictArgs, smiles: List[List[str]]):

@@ -126,6 +126,13 @@ def load_checkpoint(
     model = MoleculeModel(args)
     model_state_dict = model.state_dict()
 
+    # 🔹 Ensure the model has a version attribute consistent with args
+    if hasattr(args, "version"):
+        model.version = args.version
+    else:
+        # fall back for very old checkpoints
+        model.version = "0.1.0"
+
     # Skip missing parameters and parameters of mismatched size
     pretrained_state_dict = {}
     for loaded_param_name in loaded_state_dict.keys():

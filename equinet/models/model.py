@@ -43,6 +43,11 @@ class MoleculeModel(nn.Module):
         self.learn_uniquac_z = args.learn_uniquac_z
         self.output_size = args.num_tasks
 
+        if hasattr(args, "version"):
+            self.version = args.version
+        else:
+            self.version = "0.1.0"
+
         if self.vp is not None:
             vp_number_parameters_dict = {"basic": 1, "simplified": 2, "antoine": 3, "four_var": 4, "five_var": 5,
                                          "ambrose4": 4, "ambrose5": 5, "riedel4": 4, "riedel5": 5}

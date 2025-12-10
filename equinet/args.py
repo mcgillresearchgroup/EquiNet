@@ -6,7 +6,7 @@ from typing import List, Optional
 from typing_extensions import Literal
 from packaging import version
 from warnings import warn
-
+from _version import __version__
 import torch
 from tap import Tap  # pip install typed-argument-parser (https://github.com/swansonk14/typed-argument-parser)
 import numpy as np
@@ -637,7 +637,7 @@ class TrainArgs(CommonArgs):
 
     def process_args(self) -> None:
         super(TrainArgs, self).process_args()
-
+        self.version= equinet.__version__
         global temp_save_dir  # Prevents the temporary directory from being deleted upon function return
 
         self.hyperparateter_optimization = False # set as False, override in hyperopt_args if a hyperparameter optimization run
