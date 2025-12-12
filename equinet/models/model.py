@@ -11,7 +11,7 @@ from equinet.args import TrainArgs
 from equinet.features import BatchMolGraph
 from equinet.nn_utils import initialize_weights
 from .vp import forward_vp, get_vp_parameter_names
-from .vle import forward_vle_basic, forward_vle_activity, forward_vle_wohl, forward_vle_nrtl, forward_vle_nrtl_wohl, get_wohl_parameters, get_nrtl_parameters, get_nrtl_wohl_parameters, forward_vle_uniquac, get_uniquac_parameters, get_activity_parameters, forward_vle_freestyle, nrtl_ln_gamma_and_gE, uniquac_ln_gamma_and_gE
+from .vle import forward_vle_basic, forward_vle_activity, forward_vle_wohl, forward_vle_nrtl, forward_vle_nrtl_wohl, get_wohl_parameters, get_nrtl_parameters, get_nrtl_wohl_parameters, forward_vle_uniquac, get_uniquac_parameters, get_activity_parameters, forward_vle_freestyle, nrtl_ln_gamma_and_gE, uniquac_ln_gamma_and_gE, wohl_ln_gamma_and_gE, nrtl_wohl_ln_gamma_and_gE
 
 from typing import Tuple
 class MoleculeModel(nn.Module):
