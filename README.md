@@ -39,7 +39,7 @@ conda env create -f environment.yml --solver=libmamba
 Activate the environment:
 
 ```bash
-conda activate chemprop
+conda activate equinet
 ```
 Complete EquiNet setup locally:
 
@@ -84,9 +84,9 @@ To run training and prediction on an HPC server with SLURM, a typical `bash` scr
 ```bash
 data_dir= \yourpath\to\data
 results_dir=\yourpath\to\results
-chemprop_path=\yourpath\to\chemprop
+equinet_path=\yourpath\to\equinet
 
-python $chemprop_path/train.py \
+python $equinet_path/train.py \
   --data_path $data_dir/targets.csv \
   --features_path $data_dir/features.csv \
   --dataset_type regression \
@@ -101,7 +101,7 @@ python $chemprop_path/train.py \
   --aggregation norm \
   --save_smiles_splits
 
-python $chemprop_path/predict.py \
+python $equinet_path/predict.py \
   --test_path $results_dir/fold_0/test_full.csv \
   --features_path $results_dir/fold_0/test_features.csv \
   --preds_path $results_dir/test_preds.csv \
@@ -109,7 +109,7 @@ python $chemprop_path/predict.py \
   --number_of_molecules 2 \
   --drop_extra_columns
 
-python $chemprop_path/parameters.py \
+python $equinet_path/parameters.py \
   --test_path $results_dir/fold_0/test_full.csv \
   --features_path $results_dir/fold_0/test_features.csv \
   --preds_path $results_dir/test_params.csv \
