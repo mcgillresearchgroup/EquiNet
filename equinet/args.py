@@ -6,7 +6,7 @@ from typing import List, Optional
 from typing_extensions import Literal
 from packaging import version
 from warnings import warn
-from ._version import __version__
+from equinet._version import __version__
 import torch
 from tap import Tap  # pip install typed-argument-parser (https://github.com/swansonk14/typed-argument-parser)
 import numpy as np

@@ -29,9 +29,7 @@ def _ensure_checkpoint_versions_ok(predict_args) -> None:
     for cp in predict_args.checkpoint_paths:
         ta = load_args(cp)
 
-        # -------------------------------
-        # 1. Missing version tag entirely
-        # -------------------------------
+        # 1) Missing version tag entirely
         if not hasattr(ta, "version"):
             raise RuntimeError(
                 f"Incompatible EquiNet checkpoint:\n"
@@ -45,9 +43,7 @@ def _ensure_checkpoint_versions_ok(predict_args) -> None:
 
         ckpt_ver = ta.version
 
-        # ------------------------------------------
-        # 2. Version tag present but unparsable/odd
-        # ------------------------------------------
+        # 2) Version tag present but unparsable/odd
         try:
             parsed = version.parse(str(ckpt_ver))
         except Exception:
@@ -59,9 +55,7 @@ def _ensure_checkpoint_versions_ok(predict_args) -> None:
                 f"Please re-save this model with a proper version tag."
             )
 
-        # ------------------------------
-        # 3. Version too old (< 0.2.0)
-        # ------------------------------
+        # 3) Version too old (< 0.2.0)
         if parsed < MIN_SELF_ACTIVITY_VERSION:
             raise RuntimeError(
                 f"Incompatible EquiNet checkpoint:\n"
@@ -96,7 +90,7 @@ def load_model(args: PredictArgs, generator: bool = False):
     train_args = load_args(args.checkpoint_paths[0])
     num_tasks, task_names = train_args.num_tasks, train_args.task_names
 
-    # 3) Load model(s) and scaler(s)
+    # 3) Load model and scaler
     models = (
         load_checkpoint(checkpoint_path, device=args.device)
         for checkpoint_path in args.checkpoint_paths

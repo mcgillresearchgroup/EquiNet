@@ -126,7 +126,7 @@ def load_checkpoint(
     model = MoleculeModel(args)
     model_state_dict = model.state_dict()
 
-    # 🔹 Ensure the model has a version attribute consistent with args
+    # Ensure the model has a version attribute consistent with args
     if hasattr(args, "version"):
         model.version = args.version
     else:
