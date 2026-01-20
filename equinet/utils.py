@@ -21,7 +21,8 @@ from equinet.args import PredictArgs, TrainArgs, FingerprintArgs
 from equinet.data import StandardScaler, AtomBondScaler, MoleculeDataset, preprocess_smiles_columns, get_task_names
 from equinet.models import MoleculeModel
 from equinet.nn_utils import NoamLR
-
+from equinet.version_enforcement import assert_checkpoint_compatible
+from equinet.version_enforcement import EQUINET_VERSION, MIN_COMPATIBLE_CHECKPOINT_VERSION
 
 def makedirs(path: str, isfile: bool = False) -> None:
     """
@@ -94,6 +95,8 @@ def save_checkpoint(
         "atom_bond_scaler": atom_bond_scaler,
         "hybrid_model_features_scaler": hybrid_model_features_scaler,
     }
+
+    
     torch.save(state, path)
 
 
@@ -115,6 +118,9 @@ def load_checkpoint(
 
     # Load model and args
     state = torch.load(path, map_location=lambda storage, loc: storage, weights_only=False)
+
+    # NEW: enforce compatibility here
+    assert_checkpoint_compatible(state, strict=True)
     args = TrainArgs()
     args.from_dict(vars(state["args"]), skip_unsettable=True)
     loaded_state_dict = state["state_dict"]
@@ -125,13 +131,6 @@ def load_checkpoint(
     # Build model
     model = MoleculeModel(args)
     model_state_dict = model.state_dict()
-
-    # Ensure the model has a version attribute consistent with args
-    if hasattr(args, "version"):
-        model.version = args.version
-    else:
-        # fall back for very old checkpoints
-        model.version = "0.1.0"
 
     # Skip missing parameters and parameters of mismatched size
     pretrained_state_dict = {}

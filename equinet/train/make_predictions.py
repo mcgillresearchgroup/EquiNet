@@ -3,6 +3,7 @@ import csv
 from typing import List, Optional, Union, Tuple
 from packaging import version
 import numpy as np
+import torch
 
 from equinet.args import PredictArgs, TrainArgs
 from equinet.data import get_data, get_data_from_smiles, MoleculeDataLoader, MoleculeDataset, StandardScaler, AtomBondScaler
@@ -11,9 +12,18 @@ from equinet.features import set_extra_atom_fdim, set_extra_bond_fdim, set_react
 from equinet.models import MoleculeModel
 from equinet.uncertainty import UncertaintyCalibrator, build_uncertainty_calibrator, UncertaintyEstimator, build_uncertainty_evaluator
 from equinet.multitask_utils import reshape_values
-
+from equinet.version_enforcement import assert_checkpoint_compatible
 
 MIN_SELF_ACTIVITY_VERSION = version.parse("0.2.0")
+
+def load_equinet_checkpoint(path: str, map_location="cpu"):
+    ckpt = torch.load(path, map_location=map_location)
+
+    # Hard fail if <0.2.0 or missing version metadata
+    assert_checkpoint_compatible(ckpt, strict=True)
+
+    return ckpt
+
 
 def _ensure_checkpoint_versions_ok(predict_args) -> None:
     """
