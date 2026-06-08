@@ -9,3 +9,4 @@
 equinet.egg-info
 docs/build
 dist/*
+.venv
