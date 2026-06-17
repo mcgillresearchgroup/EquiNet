@@ -357,7 +357,7 @@ class TrainArgs(CommonArgs):
     """Dropout probability."""
     weight_decay: float = 0.0
     """AdamW weight decay parameter."""
-    activation: Literal['ReLU', 'LeakyReLU', 'PReLU', 'tanh', 'SELU', 'ELU', 'SiLU'] = 'ReLU'
+    activation: Literal['ReLU', 'LeakyReLU', 'PReLU', 'tanh', 'SELU', 'ELU', 'SiLU','softplus'] = 'ReLU'
     """Activation function."""
     atom_messages: bool = False
     """Centers messages on atoms instead of on bonds."""

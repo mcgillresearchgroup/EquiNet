@@ -81,6 +81,7 @@ def get_activation_function(activation: str) -> nn.Module:
     * :code:`SELU`
     * :code:`ELU`
     * :code:`SiLU`
+    * :code:`softplus`
 
     :param activation: The name of the activation function.
     :return: The activation function module.
@@ -99,6 +100,8 @@ def get_activation_function(activation: str) -> nn.Module:
         return nn.ELU()
     elif activation == 'SiLU':
         return nn.SiLU()
+    elif activation == 'softplus':
+        return nn.Softplus()
     else:
         raise ValueError(f'Activation "{activation}" not supported.')
 
