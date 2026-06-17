@@ -23,7 +23,7 @@ def build_search_space(search_parameters: List[str], train_epochs: int = None) -
     """
     available_spaces = {
         "activation": hp.choice(
-            "activation", options=["ReLU", "LeakyReLU", "PReLU", "tanh", "SELU", "ELU"]
+            "activation", options=["ReLU", "LeakyReLU", "PReLU", "tanh", "SELU", "ELU", "SiLU"]
         ),
         "vp": hp.choice("vp", options=[None, "antoine", "simplified"]), #new
         "vle": hp.choice("vle", options=["activity", "basic", "nrtl", "nrtl-wohl", "wohl"]), #new
@@ -301,7 +301,7 @@ def load_manual_trials(
                 val_value = ["mean", "sum", "norm"].index(param_value)
             elif key == "activation":
                 param_value = trial_args[key]
-                val_value = ["ReLU", "LeakyReLU", "PReLU", "tanh", "SELU", "ELU"].index(
+                val_value = ["ReLU", "LeakyReLU", "PReLU", "tanh", "SELU", "ELU", "SiLU"].index(
                     param_value
                 )
             else:
