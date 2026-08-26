@@ -22,12 +22,6 @@ class NoPrint:
         sys.stderr = self._original_sterr
 
 
-def get_pretrained_model_path(filename: str) -> str:
-    """Resolve the packaged path to a pretrained model checkpoint."""
-    with as_file(files("equinet").joinpath("pretrained_models", filename)) as p:
-        return str(p)
-
-
 def create_temp_csv_paths():
     """Create temp CSV paths used for the test, features, and predictions files."""
     _, temp_test = tempfile.mkstemp(suffix='.csv')

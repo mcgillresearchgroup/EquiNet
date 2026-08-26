@@ -3,7 +3,8 @@ from scipy.optimize import least_squares
 
 from equinet.train import make_predictions, load_model, get_parameters
 from equinet.args import PredictArgs, ParameterArgs
-from equinet.inference.utils import NoPrint, get_pretrained_model_path, create_temp_csv_paths, write_vle_input_files, build_predict_arguments
+from equinet.inference.utils import NoPrint, create_temp_csv_paths, write_vle_input_files, build_predict_arguments
+from equinet.inference.weights import get_pretrained_model_path
 
 
 def predict_vle_single_point(

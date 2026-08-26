@@ -5,8 +5,10 @@
 *.csv
 *.json
 *.sqlite3
+*.pt
 equinet.egg-info
 build/
 docs/build
 dist/*
 .venv
+pretrained_models/
