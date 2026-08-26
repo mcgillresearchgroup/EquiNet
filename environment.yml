@@ -22,5 +22,6 @@ dependencies:
   - torchvision>=0.5.0
   - tqdm>=4.45.0
   - setuptools<82
+  - ipykernel
   - pip:
     - typed-argument-parser>=1.6.1

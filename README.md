@@ -6,18 +6,23 @@ EquiNet is a deep learning framework based on the Chemprop architecture, designe
 
 ## Installation & Setup Instructions
 
-### 1. Install Anaconda
+### Option 1: Quick Install (via pip)
 
-Download and install [Anaconda](https://www.anaconda.com/).  
-If using a Mac with an M1/M2 chip, go to “Other Installers” to choose the correct architecture.
+If you just want to use EquiNet without editing the source, install it directly from PyPI:
 
-### 2. Clone This Repository
+```bash
+pip install equinet
+```
+
+This installs the `equinet` package along with the `equinet-train`, `equinet-predict`, `equinet-parameters`, and `equinet-hyperopt` command-line tools (see [Running EquiNet](#5-running-equinet) below). For development, or if you prefer managing dependencies (like RDKit and PyTorch) via conda, follow the steps below instead.
+
+### Option 2: Anaconda Install from Source
 
 Use one of several available methods ([GitHub documentation](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository))to clone this repository.
 ```bash
 git clone https://github.com/mcgillresearchgroup/equinet.git
 ```
-### 3. Create a New Conda Environment
+
 If using Windows, open the Anaconda Prompt (not a regular terminal).
 
 Navigate to the project directory:
@@ -26,16 +31,12 @@ Navigate to the project directory:
 cd path/to/equinet
 ```
 
-Create the environment:
-
-```bash
-conda env create -f environment.yml
-```
-If the solution is slow or hangs, you can use the mamba solver. This is the default on newer Anaconda installations, but has to be manually selected on older ones:
+Create the environment. The mamba solver is recommended but not required.
 
 ```bash
 conda env create -f environment.yml --solver=libmamba
 ```
+
 Activate the environment:
 
 ```bash
@@ -47,9 +48,9 @@ Complete EquiNet setup locally:
 pip install -e .
 
 ```
-Note the trailing `.` in the command, it is important.
+Note the trailing `.` in the command, it is important. This also installs the `equinet-train`, `equinet-predict`, `equinet-parameters`, and `equinet-hyperopt` command-line tools.
 
-### 4. Dataset Preparation
+## Dataset Preparation
 The data needs to be split into two .csv files, a **targets** file and a **features** file.
 
 For the Targets File (in training):
@@ -76,8 +77,8 @@ For the Features File (both training and prediction):
 
 Ensure both files are aligned row-wise and contain corresponding data points for training or prediction and are CSV files.
 
-### 5. Running EquiNet
-## 🧪 Training & Prediction on HPC (Bash Script Setup)
+## Running EquiNet
+### 🧪 Training & Prediction on HPC (Bash Script Setup)
 
 To run training and prediction on an HPC server with SLURM, a typical `bash` script looks like the following:
 
@@ -117,7 +118,10 @@ python $equinet_path/parameters.py \
   --number_of_molecules 2 \
   --drop_extra_columns
 ```
-#### Switching Between Model Types
+
+If you installed EquiNet via pip, the same commands are available as `equinet-train`, `equinet-predict`, and `equinet-parameters` console commands, taking the same arguments (no need to reference `$equinet_path`).
+
+### Switching Between Model Types
 EquiNet supports multiple model types for VLE prediction via the --vle and --vp flags:
 
 --vle sets the activity coefficient model. Options include:
