@@ -9,6 +9,8 @@ import re
 from time import time
 from typing import Any, Callable, List, Tuple
 import collections
+from io import StringIO
+import sys
 
 import torch
 import torch.nn as nn
@@ -931,3 +933,18 @@ def print_nan_diagnostic(
             debug(f"Hybrid Model Features: {hybrid_model_features_batch[i]}")
             if args.vle not in ["basic", None] or args.vp not in ["basic", None]:
                 debug(f"Scaled Params: {params[i]}")
+
+
+class NoPrint:
+    """
+    Context manager to suppress print statements.
+    """
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        self._original_sterr = sys.stderr
+        sys.stdout = StringIO()
+        sys.stderr = StringIO()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        sys.stdout = self._original_stdout
+        sys.stderr = self._original_sterr

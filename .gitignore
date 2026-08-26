@@ -3,10 +3,10 @@
 *.DS_Store
 *.vscode
 *.csv
-*.pt
 *.json
 *.sqlite3
 equinet.egg-info
+build/
 docs/build
 dist/*
 .venv
