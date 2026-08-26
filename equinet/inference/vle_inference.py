@@ -1,12 +1,10 @@
-import pandas as pd
 import numpy as np
-import tempfile
-from importlib.resources import files, as_file
 from scipy.optimize import least_squares
 
-from equinet.train import make_predictions, load_model
-from equinet.args import PredictArgs
-from equinet.utils import NoPrint
+from equinet.train import make_predictions, load_model, get_parameters
+from equinet.args import PredictArgs, ParameterArgs
+from equinet.inference.utils import NoPrint, get_pretrained_model_path, create_temp_csv_paths, write_vle_input_files, build_predict_arguments
+
 
 def predict_vle_single_point(
         smiles_1: str,
@@ -16,42 +14,29 @@ def predict_vle_single_point(
         temperature: float,
         model_path: str = None,
     ):
+    """Predict VLE activity coefficients and vapor pressures for a single (x1, x2, T) point.
+
+    Args:
+        smiles_1: SMILES string of the first component.
+        smiles_2: SMILES string of the second component.
+        x1: Liquid mole fraction of component 1, within [0, 1].
+        x2: Liquid mole fraction of component 2, within [0, 1].
+        temperature: Temperature in Kelvin.
+        model_path: Path to a model checkpoint. Defaults to the packaged pretrained model.
+
+    Returns:
+        A dict with keys 'x1', 'x2', 'T', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'.
+    """
 
     if model_path is None:
-        with as_file(files("equinet").joinpath("pretrained_models", "equinet_v0.2.0.pt")) as p:
-            model_path = str(p)
+        model_path = get_pretrained_model_path("equinet_v0.2.0.pt")
 
-    # create a dummy input file
-    f_preds, temp_preds = tempfile.mkstemp(suffix='.csv')
-    f_features, temp_features = tempfile.mkstemp(suffix='.csv')
-    f_test, temp_test = tempfile.mkstemp(suffix='.csv')
+    temp_test, temp_features, temp_preds = create_temp_csv_paths()
+    write_vle_input_files(temp_test, temp_features, smiles_1, smiles_2, x1, x2, temperature)
 
-    test_df = pd.DataFrame({
-        "smiles_1": [smiles_1],
-        "smiles_2": [smiles_2]
-    })
-    features_df = pd.DataFrame({
-        'x1': [x1],
-        'x2': [x2],
-        'T': [temperature],
-        'log10P1sat': ["nan"],
-        'log10P2sat': ["nan"],
-    })
-
-    # store the input dataframes
-    test_df.to_csv(temp_test, index=False)
-    features_df.to_csv(temp_features, index=False)
-
-    # provide and parse arguments
-    arguments = [
-        '--test_path', temp_test,
-        '--features_path', temp_features,
-        '--preds_path', temp_preds,
-        '--checkpoint_path', model_path,
-        '--number_of_molecules', '2',
-        '--num_workers', '0',
-    ]
-    args = PredictArgs().parse_args(arguments)
+    args = PredictArgs().parse_args(
+        build_predict_arguments(temp_test, temp_features, temp_preds, model_path)
+    )
 
     with NoPrint():
         # load pretrained model
@@ -72,45 +57,32 @@ def predict_vle_isothermal_envelope(
         mesh_size: int = 101,
         model_path: str = None,
     ):
+    """Predict a VLE envelope at fixed temperature over a mesh of x1 compositions.
+
+    Args:
+        smiles_1: SMILES string of the first component.
+        smiles_2: SMILES string of the second component.
+        temperature: Temperature in Kelvin, held fixed across the envelope.
+        mesh_size: Number of x1 points spanning [0, 1].
+        model_path: Path to a model checkpoint. Defaults to the packaged pretrained model.
+
+    Returns:
+        A dict with keys 'x1', 'x2', 'T', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat',
+        each mapped to an array of length mesh_size.
+    """
 
     if model_path is None:
-        with as_file(files("equinet").joinpath("pretrained_models", "equinet_v0.2.0.pt")) as p:
-            model_path = str(p)
-
-    # create a dummy input file
-    f_preds, temp_preds = tempfile.mkstemp(suffix='.csv')
-    f_features, temp_features = tempfile.mkstemp(suffix='.csv')
-    f_test, temp_test = tempfile.mkstemp(suffix='.csv')
+        model_path = get_pretrained_model_path("equinet_v0.2.0.pt")
 
     x1s = np.linspace(0, 1, mesh_size)
     x2s = 1 - x1s
 
-    test_df = pd.DataFrame({
-        "smiles_1": [smiles_1] * mesh_size,
-        "smiles_2": [smiles_2] * mesh_size
-    })
-    features_df = pd.DataFrame({
-        'x1': x1s,
-        'x2': x2s,
-        'T': [temperature] * mesh_size,
-        'log10P1sat': ["nan"] * mesh_size,
-        'log10P2sat': ["nan"] * mesh_size,
-    })
+    temp_test, temp_features, temp_preds = create_temp_csv_paths()
+    write_vle_input_files(temp_test, temp_features, smiles_1, smiles_2, x1s, x2s, temperature)
 
-    # store the input dataframes
-    test_df.to_csv(temp_test, index=False)
-    features_df.to_csv(temp_features, index=False)
-
-    # provide and parse arguments
-    arguments = [
-        '--test_path', temp_test,
-        '--features_path', temp_features,
-        '--preds_path', temp_preds,
-        '--checkpoint_path', model_path,
-        '--number_of_molecules', '2',
-        '--num_workers', '0',
-    ]
-    args = PredictArgs().parse_args(arguments)
+    args = PredictArgs().parse_args(
+        build_predict_arguments(temp_test, temp_features, temp_preds, model_path)
+    )
 
     with NoPrint():
         # load pretrained model
@@ -134,52 +106,39 @@ def predict_vle_isobaric_envelope(
         mesh_size: int = 101,
         model_path: str = None,
     ):
+    """Predict a VLE envelope at fixed pressure, solving for the T that matches the target pressure at each x1.
+
+    Args:
+        smiles_1: SMILES string of the first component.
+        smiles_2: SMILES string of the second component.
+        pressure: Target pressure in Pa, held fixed across the envelope.
+        mesh_size: Number of x1 points spanning [0, 1].
+        model_path: Path to a model checkpoint. Defaults to the packaged pretrained model.
+
+    Returns:
+        A dict with keys 'x1', 'x2', 'T', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat',
+        each mapped to an array of length mesh_size.
+    """
 
     if model_path is None:
-        with as_file(files("equinet").joinpath("pretrained_models", "equinet_v0.2.0.pt")) as p:
-            model_path = str(p)
+        model_path = get_pretrained_model_path("equinet_v0.2.0.pt")
 
     logP_target = np.log10(pressure)
 
     x1s = np.linspace(0, 1, mesh_size)
     x2s = 1 - x1s
 
-    # create a dummy input file
-    f_preds, temp_preds = tempfile.mkstemp(suffix='.csv')
-    f_features, temp_features = tempfile.mkstemp(suffix='.csv')
-    f_test, temp_test = tempfile.mkstemp(suffix='.csv')
+    temp_test, temp_features, temp_preds = create_temp_csv_paths()
 
     # first, calculating vapor pressures of the two components at a range of
     # temperatures to find initial guesses for the isobaric envelope.
 
     Ts = np.linspace(100, 800, 701)
+    write_vle_input_files(temp_test, temp_features, smiles_1, smiles_2, 0.5, 0.5, Ts)
 
-    test_df = pd.DataFrame({
-        "smiles_1": [smiles_1] * 701,
-        "smiles_2": [smiles_2] * 701
-    })
-    features_df = pd.DataFrame({
-        'x1': [0.5] * 701,
-        'x2': [0.5] * 701,
-        'T': Ts,
-        'log10P1sat': ["nan"] * 701,
-        'log10P2sat': ["nan"] * 701,
-    })
-
-    # store the input dataframes
-    test_df.to_csv(temp_test, index=False)
-    features_df.to_csv(temp_features, index=False)
-
-    # provide and parse arguments
-    arguments = [
-        '--test_path', temp_test,
-        '--features_path', temp_features,
-        '--preds_path', temp_preds,
-        '--checkpoint_path', model_path,
-        '--number_of_molecules', '2',
-        '--num_workers', '0',
-    ]
-    args = PredictArgs().parse_args(arguments)
+    args = PredictArgs().parse_args(
+        build_predict_arguments(temp_test, temp_features, temp_preds, model_path)
+    )
 
     with NoPrint():
         # load pretrained model
@@ -203,32 +162,11 @@ def predict_vle_isobaric_envelope(
 
     # create a solver objective function
     def predict_P_objective(T):
-        test_df = pd.DataFrame({
-            "smiles_1": [smiles_1] * mesh_size,
-            "smiles_2": [smiles_2] * mesh_size
-        })
-        features_df = pd.DataFrame({
-            'x1': x1s,
-            'x2': x2s,
-            'T': T,
-            'log10P1sat': ["nan"] * mesh_size,
-            'log10P2sat': ["nan"] * mesh_size,
-        })
+        write_vle_input_files(temp_test, temp_features, smiles_1, smiles_2, x1s, x2s, T)
 
-        # store the input dataframes
-        test_df.to_csv(temp_test, index=False)
-        features_df.to_csv(temp_features, index=False)
-
-        # provide and parse arguments
-        arguments = [
-            '--test_path', temp_test,
-            '--features_path', temp_features,
-            '--preds_path', temp_preds,
-            '--checkpoint_path', model_path,
-            '--number_of_molecules', '2',
-            '--num_workers', '0',
-        ]
-        args = PredictArgs().parse_args(arguments)
+        args = PredictArgs().parse_args(
+            build_predict_arguments(temp_test, temp_features, temp_preds, model_path)
+        )
 
         with NoPrint():
             preds = make_predictions(args=args, model_objects=model_objects)
@@ -244,34 +182,59 @@ def predict_vle_isobaric_envelope(
     ).x
 
     # re-predict with the final T to get the final y
+    write_vle_input_files(temp_test, temp_features, smiles_1, smiles_2, x1s, x2s, T_solution)
 
-    test_df = pd.DataFrame({
-        'smiles1': [smiles_1]*mesh_size,
-        'smiles2': [smiles_2]*mesh_size,
-    })
-    features_df = pd.DataFrame({
-        'x1': np.linspace(0, 1, mesh_size),
-        'x2': np.linspace(1, 0, mesh_size),
-        'T': T_solution, # T is a list of temperatures 
-        'log10P1sat': ["nan"]*mesh_size,
-        'log10P2sat': ["nan"]*mesh_size,
-    })
-    test_df.to_csv(temp_test, index=False)
-    features_df.to_csv(temp_features, index=False)
-
-    args = PredictArgs().parse_args([
-        '--test_path', temp_test,
-        '--features_path', temp_features,
-        '--preds_path', temp_preds,
-        '--checkpoint_path', model_path,
-        '--number_of_molecules', '2',
-        '--num_workers', '0',
-    ])
+    args = PredictArgs().parse_args(
+        build_predict_arguments(temp_test, temp_features, temp_preds, model_path)
+    )
 
     with NoPrint():
-        preds = np.array(make_predictions(args=args, model_objects=model_objects)) 
+        preds = np.array(make_predictions(args=args, model_objects=model_objects))
 
     # make a dictionary of the predictions split by columns
     preds_dict = dict(zip(['x1', 'x2', 'T', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'], preds.T))
+
+    return preds_dict
+
+
+def predict_vle_parameters(
+        smiles_1: str,
+        smiles_2: str,
+        temperature: float,
+        x1: float = 0.5, # within [0, 1]
+        x2: float = 0.5, # within [0, 1]
+        model_path: str = None,
+    ):
+    """Predict the NRTL/Antoine parameters (tau, alpha, Antoine coefficients) for a binary mixture.
+
+    Args:
+        smiles_1: SMILES string of the first component.
+        smiles_2: SMILES string of the second component.
+        temperature: Temperature in Kelvin.
+        x1: Liquid mole fraction of component 1, within [0, 1].
+        x2: Liquid mole fraction of component 2, within [0, 1].
+        model_path: Path to a model checkpoint. Defaults to the packaged
+            no-self-activity-correction pretrained model.
+
+    Returns:
+        A dict mapping parameter names (e.g. 'tau_12', 'tau_21', 'alpha',
+        'antoine_a_1', 'antoine_b_1', 'antoine_c_1', 'antoine_a_2', 'antoine_b_2',
+        'antoine_c_2') to their predicted values.
+    """
+
+    if model_path is None:
+        model_path = get_pretrained_model_path("equinet_no-self-activity-correction_v0.2.0.pt")
+
+    temp_test, temp_features, temp_preds = create_temp_csv_paths()
+    write_vle_input_files(temp_test, temp_features, smiles_1, smiles_2, x1, x2, temperature)
+
+    args = ParameterArgs().parse_args(
+        build_predict_arguments(temp_test, temp_features, temp_preds, model_path)
+    )
+
+    with NoPrint():
+        names, parameters = get_parameters(args=args)
+
+    preds_dict = dict(zip(names, parameters[0]))
 
     return preds_dict

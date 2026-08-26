@@ -416,7 +416,7 @@ class MoleculeModel(nn.Module):
                 names += act_names
                 parameters = torch.cat([parameters, act_parameters], dim=1)
                 
-                if self.self_activity_correction or self.self_activity_lambda > 0:
+                if self.self_activity_correction:
                     act1_names, act1_parameters = get_uniquac_parameters(output, r1, r2, q1, q2, x_1, x_1, input_temperature_batch, Z, 1)
                     act2_names, act2_parameters = get_uniquac_parameters(output, r1, r2, q1, q2, x_2, x_2, input_temperature_batch, Z, 2)
                     names += act1_names + act2_names
@@ -426,7 +426,7 @@ class MoleculeModel(nn.Module):
                 act_names, act_parameters = get_wohl_parameters(output, self.wohl_order, q_1, q_2)
                 names += act_names
                 parameters = torch.cat([parameters, act_parameters], axis=1)
-                if self.self_activity_correction or self.self_activity_lambda > 0:
+                if self.self_activity_correction:
                     act1_names, act1_parameters = get_wohl_parameters(output_1, self.wohl_order, q_1, q_1, 1)
                     act2_names, act2_parameters = get_wohl_parameters(output_2, self.wohl_order, q_2, q_2, 2)
                     names += act1_names + act2_names
@@ -435,7 +435,7 @@ class MoleculeModel(nn.Module):
                 act_names, act_parameters = get_nrtl_wohl_parameters(output, self.wohl_order, q_1, q_2)
                 names += act_names
                 parameters = torch.cat([parameters, act_parameters], axis=1)
-                if self.self_activity_correction or self.self_activity_lambda > 0:
+                if self.self_activity_correction:
                     act1_names, act1_parameters = get_nrtl_wohl_parameters(output_1, self.wohl_order, q_1, q_1, 1)
                     act2_names, act2_parameters = get_nrtl_wohl_parameters(output_2, self.wohl_order, q_2, q_2, 2)
                     names += act1_names + act2_names
@@ -444,7 +444,7 @@ class MoleculeModel(nn.Module):
                 nrtl_names, nrtl_parameters = get_nrtl_parameters(output)
                 names += nrtl_names
                 parameters = torch.cat([parameters, nrtl_parameters], axis=1)
-                if self.self_activity_correction or self.self_activity_lambda > 0:
+                if self.self_activity_correction:
                     nrtl1_names, nrtl1_parameters = get_nrtl_parameters(output_1, 1)
                     nrtl2_names, nrtl2_parameters = get_nrtl_parameters(output_2, 2)
                     names += nrtl1_names + nrtl2_names
@@ -453,7 +453,7 @@ class MoleculeModel(nn.Module):
                 act_names, act_parameters = get_activity_parameters(output)
                 names += act_names
                 parameters = torch.cat([parameters, act_parameters], axis=1)
-                if self.self_activity_correction or self.self_activity_lambda > 0:
+                if self.self_activity_correction:
                     act1_names, act1_parameters = get_activity_parameters(output_1, 1)
                     act2_names, act2_parameters = get_activity_parameters(output_2, 2)
                     names += act1_names + act2_names

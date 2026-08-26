@@ -6,7 +6,7 @@ from .cross_validate import equinet_train, cross_validate, TRAIN_LOGGER_NAME
 from .evaluate import evaluate, evaluate_predictions
 from .make_predictions import equinet_predict, make_predictions, load_model, set_features, load_data, predict_and_save
 from .molecule_fingerprint import equinet_fingerprint, model_fingerprint
-from .parameters import equinet_parameters
+from .parameters import equinet_parameters, get_parameters
 from .predict import predict
 from .run_training import run_training
 from .train import train
@@ -19,6 +19,7 @@ __all__ = [
     'evaluate_predictions',
     'equinet_predict',
     'equinet_fingerprint',
+    'get_parameters',
     'equinet_parameters',
     'make_predictions',
     'load_model',

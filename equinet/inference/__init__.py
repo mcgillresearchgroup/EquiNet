@@ -1,1 +1,1 @@
-from .vle_inference import predict_vle_single_point
+from .vle_inference import *

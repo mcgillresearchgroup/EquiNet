@@ -109,6 +109,8 @@ def get_parameters(
         for datapoint in test_data:
             writer.writerow(datapoint.row)
 
+    return names, parameters
+
 
 def equinet_parameters() -> None:
     """

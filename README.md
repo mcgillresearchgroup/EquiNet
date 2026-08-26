@@ -80,7 +80,7 @@ Ensure both files are aligned row-wise and contain corresponding data points for
 ## Running EquiNet
 ### 🧪 Training & Prediction on HPC (Bash Script Setup)
 
-To run training and prediction on an HPC server with SLURM, a typical `bash` script looks like the following:
+To run training and prediction jobs, a typical `bash` script looks like the following:
 
 ```bash
 data_dir= \yourpath\to\data
@@ -137,3 +137,22 @@ EquiNet supports multiple model types for VLE prediction via the --vle and --vp 
 - Leave empty (omit --vp) → tabulated vapor pressure from features file is used
 - Set --vp antoine → model internally predicts vapor pressure using Antoine equation
 
+## API Inference Functions
+
+For quick, in-process predictions without writing intermediate CSV files or using the CLI, `equinet.inference` exposes a set of Python functions that wrap a pretrained model. Each function accepts SMILES strings for the two components and an optional `model_path` (defaults to a packaged pretrained checkpoint).
+
+```python
+from equinet.inference import (
+    predict_vle_single_point,
+    predict_vle_isothermal_envelope,
+    predict_vle_isobaric_envelope,
+    predict_vle_parameters,
+)
+```
+
+- `predict_vle_single_point` – Predicts activity coefficients, vapor compositions, and vapor pressures for a single composition (`x1`, `x2`) at a given temperature.
+- `predict_vle_isothermal_envelope` – Predicts a full VLE envelope at a fixed temperature over a mesh of `x1` compositions.
+- `predict_vle_isobaric_envelope` – Predicts a full VLE envelope at a fixed pressure, solving internally for the temperature that matches the target pressure at each composition.
+- `predict_vle_parameters` – Predicts the underlying thermodynamic model parameters (e.g. NRTL `tau`/`alpha` and Antoine coefficients) for a binary mixture, rather than pointwise VLE properties.
+
+See the notebooks in [examples/](examples/) for usage examples.

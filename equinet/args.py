@@ -1060,9 +1060,9 @@ class FingerprintArgs(PredictArgs):
 
 
 class ParameterArgs(PredictArgs):
-    """:class:`FingerprintArgs` includes :class:`PredictArgs` with additional arguments for the generation of latent fingerprint vectors."""
+    """:class:`ParameterArgs` includes :class:`PredictArgs` with additional arguments for the generation of latent fingerprint vectors."""
     internal_scaled_parameters: bool = False
-    """Whether to unscale the parameters before saving them."""
+    """Some parameters are scaled internally and can be unscaled before returning to the user. `True` if scaled, `False` if unscaled."""
 
 
 class HyperoptArgs(TrainArgs):

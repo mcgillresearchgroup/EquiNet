@@ -15,6 +15,7 @@ import sys
 import torch
 import torch.nn as nn
 import numpy as np
+from packaging import version
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from tqdm import tqdm
@@ -486,6 +487,50 @@ def load_task_names(path: str) -> List[str]:
     return load_args(path).task_names
 
 
+
+def check_checkpoint_version(checkpoint_path: str, min_version: str = "0.2.0") -> None:
+    """
+    Raises a RuntimeError if a checkpoint's EquiNet version tag is missing, unparsable, or below `min_version`.
+
+    :param checkpoint_path: Path where model checkpoint is saved.
+    :param min_version: The minimum EquiNet version string required (e.g. "0.2.0").
+    """
+    args = load_args(checkpoint_path)
+    ckpt_ver = getattr(args, "version", None)
+
+    if ckpt_ver is None:
+        raise RuntimeError(
+            f"Incompatible EquiNet checkpoint:\n"
+            f"  Path: {checkpoint_path}\n"
+            f"  Problem: This checkpoint does not contain a 'version' tag.\n\n"
+            f"This usually means it was trained with a pre-{min_version} EquiNet codebase, "
+            f"which is not compatible with self-activity correction.\n\n"
+            f"Please re-save or retrain this model with EquiNet >= {min_version}."
+        )
+
+    try:
+        parsed_ver = version.parse(str(ckpt_ver))
+    except Exception:
+        raise RuntimeError(
+            f"Incompatible EquiNet checkpoint:\n"
+            f"  Path: {checkpoint_path}\n"
+            f"  Problem: The version tag '{ckpt_ver}' could not be interpreted.\n\n"
+            f"Expected a semantic version string (e.g., '{min_version}').\n"
+            f"Please re-save this model with a proper version tag."
+        )
+
+    if parsed_ver < version.parse(min_version):
+        raise RuntimeError(
+            f"Incompatible EquiNet checkpoint:\n"
+            f"  Path: {checkpoint_path}\n"
+            f"  Found version: {ckpt_ver}\n"
+            f"  Minimum required: {min_version}\n\n"
+            f"This checkpoint predates the required functionality and "
+            f"cannot be safely used.\n"
+            f"Please re-save or retrain the model using EquiNet >= {min_version}."
+        )
+
+
 def build_optimizer(model: nn.Module, args: TrainArgs) -> Optimizer:
     """
     Builds a PyTorch Optimizer.
@@ -934,17 +979,3 @@ def print_nan_diagnostic(
             if args.vle not in ["basic", None] or args.vp not in ["basic", None]:
                 debug(f"Scaled Params: {params[i]}")
 
-
-class NoPrint:
-    """
-    Context manager to suppress print statements.
-    """
-    def __enter__(self):
-        self._original_stdout = sys.stdout
-        self._original_sterr = sys.stderr
-        sys.stdout = StringIO()
-        sys.stderr = StringIO()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        sys.stdout = self._original_stdout
-        sys.stderr = self._original_sterr
