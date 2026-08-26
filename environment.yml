@@ -19,5 +19,6 @@ dependencies:
   - tqdm>=4.45.0
   - setuptools<82
   - ipykernel
+  - huggingface-hub
   - pip:
     - typed-argument-parser>=1.6.1
