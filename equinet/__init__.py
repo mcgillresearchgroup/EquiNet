@@ -11,7 +11,7 @@ import equinet.hyperparameter_optimization
 import equinet.nn_utils
 import equinet.utils
 import equinet.rdkit
-import equinet.hyperopt_utils
+import equinet.optuna_utils
 import equinet.inference
 from equinet._version import __version__
 

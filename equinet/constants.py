@@ -6,3 +6,7 @@ HYPEROPT_LOGGER_NAME = 'hyperparameter-optimization'
 MODEL_FILE_NAME = 'model.pt'
 TEST_SCORES_FILE_NAME = 'test_scores.csv'
 HYPEROPT_SEED_FILE_NAME = 'hyperopt_seeds.txt'
+HYPEROPT_JOURNAL_FILE_NAME = 'optuna_journal.log'
+
+# Optuna study names
+HYPEROPT_STUDY_NAME = 'equinet_hyperopt'

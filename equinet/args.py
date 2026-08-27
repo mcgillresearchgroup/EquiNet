@@ -12,6 +12,7 @@ from tap import Tap  # pip install typed-argument-parser (https://github.com/swa
 import numpy as np
 
 import equinet.data.utils
+from equinet.constants import HYPEROPT_STUDY_NAME
 from equinet.data import set_cache_mol, empty_cache
 from equinet.features import get_available_features_generators
 
@@ -1077,8 +1078,11 @@ class HyperoptArgs(TrainArgs):
     log_dir: str = None
     """(Optional) Path to a directory where all results of the hyperparameter optimization will be written."""
     hyperopt_checkpoint_dir: str = None
-    """Path to a directory where hyperopt completed trial data is stored. Hyperopt job will include these trials if restarted.
-    Can also be used to run multiple instances in parallel if they share the same checkpoint directory."""
+    """Path to a directory where the Optuna journal file of completed trial data is stored. Hyperopt job will include these trials if restarted.
+    Can also be used to run multiple instances in parallel if they share the same checkpoint directory, including across machines on a shared filesystem."""
+    hyperopt_study_name: str = HYPEROPT_STUDY_NAME
+    """Name of the Optuna study within the journal file. Only instances using the same study name share trials with each other,
+    so separate searches can safely share a checkpoint directory by using different names."""
     startup_random_iters: int = None
     """The initial number of trials that will be randomly specified before TPE algorithm is used to select the rest.
     By default will be half the total number of trials."""
