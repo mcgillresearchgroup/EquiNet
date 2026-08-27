@@ -17,7 +17,6 @@ dependencies:
   - scipy>=1.4.1
   - tensorboardX>=2.0
   - tqdm>=4.45.0
-  - setuptools<82
   - ipykernel
   - huggingface-hub
   - pip:

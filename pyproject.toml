@@ -35,7 +35,6 @@ dependencies = [
     "pip>=20.0.2",
     "scikit-learn>=1.4",
     "scipy>=1.4.1",
-    "setuptools<82",
     "tensorboardX>=2.0",
     "torch>=2.6",
     "tqdm>=4.45.0",

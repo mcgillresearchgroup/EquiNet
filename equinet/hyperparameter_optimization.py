@@ -43,6 +43,10 @@ def hyperopt(args: HyperoptArgs) -> None:
     # Create logger
     logger = create_logger(name=HYPEROPT_LOGGER_NAME, save_dir=args.log_dir, quiet=True)
 
+    # Every trial is already reported through the logger above, and reloading the shared study
+    # once per iteration makes Optuna's own progress logging repetitive.
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
     # Build search space
     logger.info(f"Creating search space using parameters {args.search_parameters}.")
     space = build_search_space(

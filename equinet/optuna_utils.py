@@ -248,25 +248,30 @@ def get_hyperopt_seed(seed: int, dir_path: str) -> int:
     """
 
     seed_path = os.path.join(dir_path, HYPEROPT_SEED_FILE_NAME)
+    makedirs(seed_path, isfile=True)
 
-    seeds = []
-    if os.path.exists(seed_path):
-        with open(seed_path, "r") as f:
-            seed_line = next(f)
-            seeds.extend(seed_line.split())
-    else:
-        makedirs(seed_path, isfile=True)
+    # Instances running in parallel all read, extend and rewrite this one file, so the whole
+    # read-modify-write has to be exclusive or two of them can claim the same seed. The lock
+    # is taken with the same open-based mechanism Optuna uses for the journal file, which is
+    # atomic on NFS as well as on a local filesystem.
+    lock = JournalFileOpenLock(seed_path)
+    lock.acquire()
+    try:
+        seeds = []
+        if os.path.exists(seed_path):
+            with open(seed_path, "r") as f:
+                seeds = [int(sd) for sd in f.read().split()]
 
-    seeds = [int(sd) for sd in seeds]
+        while seed in seeds:
+            seed += 1
+        seeds.append(seed)
 
-    while seed in seeds:
-        seed += 1
-    seeds.append(seed)
+        write_line = " ".join(map(str, seeds)) + "\n"
 
-    write_line = " ".join(map(str, seeds)) + "\n"
-
-    with open(seed_path, "w") as f:
-        f.write(write_line)
+        with open(seed_path, "w") as f:
+            f.write(write_line)
+    finally:
+        lock.release()
 
     return seed
 
