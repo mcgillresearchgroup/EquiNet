@@ -1071,6 +1071,16 @@ class HyperoptArgs(TrainArgs):
 
     num_iters: int = 20
     """Number of hyperparameter choices to try."""
+    hyperopt_seed: int = None
+    """(Optional) Random seed for this instance's parameter sampler, for reproducing a single-instance search.
+
+    Leave this unset when running multiple instances in parallel. Every instance sharing a checkpoint directory
+    would start from the same random state and propose the same initial parameters, so the instances would
+    duplicate each other's work instead of covering the search space. Unset, each instance draws its own random
+    stream and the instances explore independently.
+
+    Note that a parallel search is not reproducible from a seed in any case, because what the sampler proposes
+    depends on which trials happen to be visible in the shared journal file at the moment it samples."""
     config_save_path: str
     """Path to :code:`.json` file where best hyperparameter settings will be written."""
     log_dir: str = None
@@ -1161,7 +1171,10 @@ class HyperoptArgs(TrainArgs):
         if "linked_hidden_size" in search_parameters and ("hidden_size" in search_parameters or "ffn_hidden_size" in search_parameters):
             search_parameters.remove("linked_hidden_size")
             search_parameters.update(["hidden_size", "ffn_hidden_size"])
-        self.search_parameters = list(search_parameters)
+        # Sorted, not just listed: iteration order of a set of strings varies between processes,
+        # which would make the sampler consume its random stream in a different order each run and
+        # defeat the reproducibility that hyperopt_seed is meant to provide.
+        self.search_parameters = sorted(search_parameters)
 
 
 class SklearnTrainArgs(TrainArgs):

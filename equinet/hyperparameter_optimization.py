@@ -121,15 +121,19 @@ def hyperopt(args: HyperoptArgs) -> None:
 
         return mean_score
 
-    # One sampler for the lifetime of this instance. It is deliberately left unseeded so that
-    # instances sharing a checkpoint directory draw independent random streams; a shared seed
-    # would have them propose the same startup points and duplicate each other's work. Note that
-    # a parallel search is not reproducible from a seed in any case, because what TPE proposes
-    # depends on which trials happen to be visible in the journal when it samples.
-    # constant_liar keeps instances from repeatedly proposing the same point while another
-    # instance still has that trial running.
+    # One sampler for the lifetime of this instance. Unseeded by default, so that instances sharing
+    # a checkpoint directory draw independent random streams instead of all proposing the same
+    # starting parameters. constant_liar additionally keeps them from proposing the same point while
+    # another instance still has that trial running.
+    if args.hyperopt_seed is not None:
+        logger.info(
+            f"Sampling parameters with seed {args.hyperopt_seed}. This reproduces a single-instance "
+            "search; parallel instances sharing a checkpoint directory should each be left unseeded."
+        )
     sampler = optuna.samplers.TPESampler(
-        n_startup_trials=args.startup_random_iters, constant_liar=True
+        n_startup_trials=args.startup_random_iters,
+        constant_liar=True,
+        seed=args.hyperopt_seed,
     )
 
     # Iterate over a number of trials
