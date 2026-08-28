@@ -46,8 +46,10 @@ def predict_vle_single_point(
         # make predictions
         preds = make_predictions(args=args, model_objects=model_objects)
 
-    preds_dict = dict(zip(['x1', 'x2', 'T', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'], preds[0]))
-
+    preds_dict = dict(zip(['y1', 'y2', 'log10P', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'], preds[0]))
+    preds_dict['x1'] = x1
+    preds_dict['x2'] = x2
+    preds_dict['T'] = temperature
     return preds_dict
 
 
@@ -95,7 +97,10 @@ def predict_vle_isothermal_envelope(
     preds = np.array(preds)
 
     # make a dictionary of the predictions split by columns
-    preds_dict = dict(zip(['x1', 'x2', 'T', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'], preds.T))
+    preds_dict = dict(zip(['y1', 'y2', 'log10P', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'], preds.T))
+    preds_dict['x1'] = x1s
+    preds_dict['x2'] = x2s
+    preds_dict['T'] = np.full(mesh_size, temperature)
 
     return preds_dict
 
@@ -193,7 +198,10 @@ def predict_vle_isobaric_envelope(
         preds = np.array(make_predictions(args=args, model_objects=model_objects))
 
     # make a dictionary of the predictions split by columns
-    preds_dict = dict(zip(['x1', 'x2', 'T', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'], preds.T))
+    preds_dict = dict(zip(['y1', 'y2', 'log10P', 'lngamma1', 'lngamma2', 'log10P1sat', 'log10P2sat'], preds.T))
+    preds_dict['x1'] = x1s
+    preds_dict['x2'] = x2s
+    preds_dict['T'] = T_solution
 
     return preds_dict
 
