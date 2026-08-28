@@ -18,7 +18,7 @@ from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend, JournalFileOpenLock
 
 from equinet.args import HyperoptArgs
-from equinet.constants import HYPEROPT_JOURNAL_FILE_NAME, HYPEROPT_SEED_FILE_NAME
+from equinet.constants import HYPEROPT_JOURNAL_FILE_NAME
 from equinet.utils import makedirs
 
 
@@ -238,44 +238,6 @@ def create_study(
     return study
 
 
-def get_hyperopt_seed(seed: int, dir_path: str) -> int:
-    """
-    Assigns a seed for hyperparameter optimization calculations. Each iteration will start with a different seed.
-
-    :param seed: The initial attempted hyperopt seed.
-    :param dir_path: Path to the directory containing hyperopt checkpoint files.
-    :return: An integer for use as hyperopt random seed.
-    """
-
-    seed_path = os.path.join(dir_path, HYPEROPT_SEED_FILE_NAME)
-    makedirs(seed_path, isfile=True)
-
-    # Instances running in parallel all read, extend and rewrite this one file, so the whole
-    # read-modify-write has to be exclusive or two of them can claim the same seed. The lock
-    # is taken with the same open-based mechanism Optuna uses for the journal file, which is
-    # atomic on NFS as well as on a local filesystem.
-    lock = JournalFileOpenLock(seed_path)
-    lock.acquire()
-    try:
-        seeds = []
-        if os.path.exists(seed_path):
-            with open(seed_path, "r") as f:
-                seeds = [int(sd) for sd in f.read().split()]
-
-        while seed in seeds:
-            seed += 1
-        seeds.append(seed)
-
-        write_line = " ".join(map(str, seeds)) + "\n"
-
-        with open(seed_path, "w") as f:
-            f.write(write_line)
-    finally:
-        lock.release()
-
-    return seed
-
-
 def load_manual_trials(
     manual_trials_dirs: List[str],
     space: Dict[str, SearchParameter],
@@ -326,7 +288,7 @@ def load_manual_trials(
     ]
 
     manual_trials = []
-    for i, trial_dir in enumerate(manual_trials_dirs):
+    for trial_dir in manual_trials_dirs:
 
         # Extract trial data from test_scores.csv
         with open(os.path.join(trial_dir, "test_scores.csv")) as f:
@@ -399,7 +361,7 @@ def load_manual_trials(
                     "std_score": std_score,
                     "hyperparams": hyperparams,
                     "num_params": 0,
-                    "seed": -(i + 1),
+                    "manual_trial_dir": trial_dir,
                 },
             )
         )

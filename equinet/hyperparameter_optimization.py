@@ -14,7 +14,7 @@ from equinet.nn_utils import param_count
 from equinet.train import cross_validate, run_training
 from equinet.utils import create_logger, makedirs, timeit
 from equinet.optuna_utils import add_manual_trials, build_search_space, build_storage, \
-    create_study, get_completed_trials, get_hyperopt_seed, load_manual_trials, \
+    create_study, get_completed_trials, load_manual_trials, \
     save_config, suggest_hyperparameters
 
 
@@ -70,7 +70,8 @@ def hyperopt(args: HyperoptArgs) -> None:
         logger.info("No manual trials loaded as part of hyperparameter search")
 
     # Define hyperparameter optimization
-    def objective(trial: optuna.Trial, seed: int) -> float:
+    def objective(trial: optuna.Trial) -> float:
+        logger.info(f"Initiating trial {trial.number}")
         hyperparams: Dict[str, Union[int, float]] = suggest_hyperparameters(trial, space)
 
         # Copy args
@@ -78,7 +79,7 @@ def hyperopt(args: HyperoptArgs) -> None:
 
         # Update args with hyperparams
         if args.save_dir is not None:
-            folder_name = f"trial_seed_{seed}"
+            folder_name = f"trial_{trial.number}"
             hyper_args.save_dir = os.path.join(hyper_args.save_dir, folder_name)
 
         for key, value in hyperparams.items():
@@ -99,7 +100,7 @@ def hyperopt(args: HyperoptArgs) -> None:
         # Record results
         temp_model = MoleculeModel(hyper_args)
         num_params = param_count(temp_model)
-        logger.info(f"Trial results with seed {seed}")
+        logger.info(f"Trial {trial.number} results")
         logger.info(hyperparams)
         logger.info(f"num params: {num_params:,}")
         logger.info(f"{mean_score} +/- {std_score} {hyper_args.metric}")
@@ -117,16 +118,19 @@ def hyperopt(args: HyperoptArgs) -> None:
         trial.set_user_attr("std_score", std_score)
         trial.set_user_attr("hyperparams", hyperparams)
         trial.set_user_attr("num_params", num_params)
-        trial.set_user_attr("seed", seed)
 
         return mean_score
 
-    def make_sampler(seed: int = None) -> optuna.samplers.TPESampler:
-        # constant_liar keeps parallel instances from repeatedly proposing the same point
-        # while another instance still has that trial running.
-        return optuna.samplers.TPESampler(
-            n_startup_trials=args.startup_random_iters, constant_liar=True, seed=seed
-        )
+    # One sampler for the lifetime of this instance. It is deliberately left unseeded so that
+    # instances sharing a checkpoint directory draw independent random streams; a shared seed
+    # would have them propose the same startup points and duplicate each other's work. Note that
+    # a parallel search is not reproducible from a seed in any case, because what TPE proposes
+    # depends on which trials happen to be visible in the journal when it samples.
+    # constant_liar keeps instances from repeatedly proposing the same point while another
+    # instance still has that trial running.
+    sampler = optuna.samplers.TPESampler(
+        n_startup_trials=args.startup_random_iters, constant_liar=True
+    )
 
     # Iterate over a number of trials
     for i in range(args.num_iters):
@@ -136,7 +140,7 @@ def hyperopt(args: HyperoptArgs) -> None:
             study_name=args.hyperopt_study_name,
             minimize_score=args.minimize_score,
             space=space,
-            sampler=make_sampler(),
+            sampler=sampler,
         )
 
         if manual_trials is not None:
@@ -147,14 +151,7 @@ def hyperopt(args: HyperoptArgs) -> None:
         if num_trials >= args.num_iters:
             break
 
-        # Set a unique random seed for each trial. Pass it into objective function for logging purposes.
-        hyperopt_seed = get_hyperopt_seed(
-            seed=args.hyperopt_seed, dir_path=args.hyperopt_checkpoint_dir
-        )
-        study.sampler = make_sampler(seed=hyperopt_seed)
-
         # Log the start of the trial
-        logger.info(f"Initiating trial with seed {hyperopt_seed}")
         logger.info(f"Loaded {num_trials} previous trials")
         if num_trials < args.startup_random_iters:
             random_remaining = args.startup_random_iters - num_trials
@@ -164,7 +161,7 @@ def hyperopt(args: HyperoptArgs) -> None:
         else:
             logger.info(f"Parameters assigned with TPE directed search")
 
-        study.optimize(lambda trial: objective(trial, seed=hyperopt_seed), n_trials=1)
+        study.optimize(objective, n_trials=1)
 
     # Report best result
     study = create_study(
@@ -172,16 +169,21 @@ def hyperopt(args: HyperoptArgs) -> None:
         study_name=args.hyperopt_study_name,
         minimize_score=args.minimize_score,
         space=space,
-        sampler=make_sampler(),
+        sampler=sampler,
     )
     results = get_completed_trials(study)
     if len(results) == 0:
         raise ValueError("No trials completed with a usable score, so no best trial can be reported.")
-    best_result = min(
+    best_trial = min(
         results,
         key=lambda trial: (1 if args.minimize_score else -1) * trial.user_attrs["mean_score"],
-    ).user_attrs
-    logger.info(f'Best trial, with seed {best_result["seed"]}')
+    )
+    best_result = best_trial.user_attrs
+    if "manual_trial_dir" in best_result:
+        logger.info(f'Best trial, number {best_trial.number}, '
+                    f'a manual trial loaded from {best_result["manual_trial_dir"]}')
+    else:
+        logger.info(f"Best trial, number {best_trial.number}")
     logger.info(best_result["hyperparams"])
     logger.info(f'num params: {best_result["num_params"]:,}')
     logger.info(
