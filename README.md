@@ -147,6 +147,9 @@ from equinet.inference import (
     predict_vle_isothermal_envelope,
     predict_vle_isobaric_envelope,
     predict_vle_parameters,
+    predict_vp,
+    predict_bp,
+    predict_vp_parameters,
 )
 ```
 
@@ -154,5 +157,8 @@ from equinet.inference import (
 - `predict_vle_isothermal_envelope` – Predicts a full VLE envelope at a fixed temperature over a mesh of `x1` compositions.
 - `predict_vle_isobaric_envelope` – Predicts a full VLE envelope at a fixed pressure, solving internally for the temperature that matches the target pressure at each composition.
 - `predict_vle_parameters` – Predicts the underlying thermodynamic model parameters (e.g. NRTL `tau`/`alpha` and Antoine coefficients) for a binary mixture, rather than pointwise VLE properties.
+- `predict_vp` – Predicts the vapor pressure of a single component at a given temperature (or list/array of temperatures).
+- `predict_bp` – Predicts the boiling point of a single component at a given pressure (defaults to 1 atm).
+- `predict_vp_parameters` – Predicts the underlying modified Antoine equation parameters (`antoine_a`, `antoine_b`, `antoine_c`, `antoine_t_scale`) for a single component at a given temperature.
 
 See the notebooks in [examples/](examples/) for usage examples.
