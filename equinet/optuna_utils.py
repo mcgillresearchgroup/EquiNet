@@ -134,12 +134,14 @@ def build_search_space(
         "activation": CategoricalParameter(
             ["ReLU", "LeakyReLU", "PReLU", "tanh", "SELU", "ELU", "SiLU", "softplus"]
         ),
-        "vp": CategoricalParameter([None, "antoine", "simplified"]),
-        "vle": CategoricalParameter(["activity", "basic", "nrtl", "nrtl-wohl", "wohl"]),
+        # vle, vp and fugacity_balance are deliberately absent. Trials are built by setting
+        # attributes on an already processed args object, so parse-time derivations do not re-run,
+        # and those three drive derivations: vle sets number_of_molecules and mpn_shared, and
+        # fugacity_balance selects the squared_log_fugacity_difference loss, which cannot be set
+        # any other way. Searching over them silently trains against the wrong loss.
         "wohl_order": IntParameter(low=3, high=5),
         "self_activity_correction": CategoricalParameter([True, False]),
         "self_activity_lambda": ZeroOrLogUniformParameter(low=1e-5, high=1e-1),
-        "fugacity_balance": CategoricalParameter([True, False]),
         "aggregation": CategoricalParameter(["mean", "sum", "norm"]),
         "aggregation_norm": IntParameter(low=1, high=200),
         "batch_size": IntParameter(low=5, high=200, step=5),

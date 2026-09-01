@@ -1107,12 +1107,20 @@ class HyperoptArgs(TrainArgs):
             If either of the component words are entered in separately, both are searched independently.
         learning_rate - search for max_lr, init_lr, final_lr, and warmup_epochs. The search for init_lr and final_lr values
             are defined as fractions of the max_lr value. The search for warmup_epochs is as a fraction of the total epochs used.
-        all - include search for all 13 inidividual keyword options
+        all - include search for all of the individual keyword options
 
     Individual supported parameters:
         activation, aggregation, aggregation_norm, batch_size, depth,
         dropout, ffn_hidden_size, ffn_num_layers, final_lr, hidden_size,
-        init_lr, max_lr, warmup_epochs, weight_decay
+        init_lr, max_lr, self_activity_correction, self_activity_lambda,
+        warmup_epochs, weight_decay, wohl_order
+
+    Note that vle, vp and fugacity_balance cannot be searched over. Each trial is set up by
+    assigning attributes onto an already processed arguments object, so the derivations that
+    normally run at parse time do not run again. vle determines number_of_molecules and
+    mpn_shared, and fugacity_balance selects the squared_log_fugacity_difference loss function,
+    which cannot be requested any other way. A trial that changed them would therefore be
+    trained with settings that do not match the value being searched.
     """
 
     def process_args(self) -> None:
@@ -1136,15 +1144,13 @@ class HyperoptArgs(TrainArgs):
             "activation", "aggregation", "aggregation_norm", "batch_size", "depth",
             "dropout", "ffn_hidden_size", "ffn_num_layers", "final_lr", "hidden_size",
             "init_lr", "max_lr", "warmup_epochs", "weight_decay",
-            "wohl_order", "self_activity_correction", "self_activity_lambda", "vp", "vle",
-            "fugacity_balance",            
+            "wohl_order", "self_activity_correction", "self_activity_lambda",
         ] #TODO add supported keywords
         supported_parameters = [
             "activation", "aggregation", "aggregation_norm", "batch_size", "depth",
             "dropout", "ffn_hidden_size", "ffn_num_layers", "final_lr_ratio", "hidden_size",
             "init_lr_ratio", "linked_hidden_size", "max_lr", "warmup_epochs", "weight_decay",
-            "wohl_order", "self_activity_correction", "self_activity_lambda", "vp", "vle",
-            "fugacity_balance",            
+            "wohl_order", "self_activity_correction", "self_activity_lambda",
         ] #TODO add supported parameters
         unsupported_keywords = set(self.search_parameter_keywords) - set(supported_keywords)
         if len(unsupported_keywords) != 0:
