@@ -2,6 +2,7 @@ import json
 import os
 from tempfile import TemporaryDirectory
 import pickle
+from copy import deepcopy
 from typing import List, Optional
 from typing_extensions import Literal
 from packaging import version
@@ -1124,6 +1125,15 @@ class HyperoptArgs(TrainArgs):
     """
 
     def process_args(self) -> None:
+        # Snapshot the arguments exactly as parsed, before any derivation here or in TrainArgs
+        # runs. build_trial_args rebuilds each trial from this namespace so that process_args can
+        # run again with the trial's hyperparameters already in place. Assigning them onto an
+        # already processed object instead would leave everything derived from them stale.
+        if not hasattr(self, "_raw_arg_values"):
+            self._raw_arg_values = deepcopy(
+                {key: value for key, value in self.__dict__.items() if not key.startswith("_")}
+            )
+
         super(HyperoptArgs, self).process_args()
 
         self.hyperparateter_optimization = True
@@ -1181,6 +1191,30 @@ class HyperoptArgs(TrainArgs):
         # which would make the sampler consume its random stream in a different order each run and
         # defeat the reproducibility that hyperopt_seed is meant to provide.
         self.search_parameters = sorted(search_parameters)
+
+        # A config file is applied inside TrainArgs.process_args, which runs after each trial's
+        # hyperparameters are in place, so a config entry would silently win over the search.
+        # Nothing here may become a new public attribute of this class: Tap.as_dict picks up any
+        # name it does not recognise from the base class, so a method would be stored in saved
+        # checkpoints as a bound method and drag this whole object in with it.
+        if self.config_path is not None:
+            trial_arguments = set(self.search_parameters)
+            if "linked_hidden_size" in trial_arguments:
+                trial_arguments.update(["hidden_size", "ffn_hidden_size"])
+            if "init_lr_ratio" in trial_arguments:
+                trial_arguments.add("init_lr")
+            if "final_lr_ratio" in trial_arguments:
+                trial_arguments.add("final_lr")
+
+            with open(self.config_path) as f:
+                conflicts = set(json.load(f).keys()) & trial_arguments
+            if conflicts:
+                raise ValueError(
+                    f"The config file {self.config_path} sets {sorted(conflicts)}, which the "
+                    f"hyperparameter search also varies. The config value would override the "
+                    f"searched value in every trial. Remove these entries from the config file, or "
+                    f"remove the corresponding parameters from --search_parameter_keywords."
+                )
 
 
 class SklearnTrainArgs(TrainArgs):

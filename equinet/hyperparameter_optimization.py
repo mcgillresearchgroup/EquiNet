@@ -1,6 +1,5 @@
 """Optimizes hyperparameters using Bayesian optimization."""
 
-from copy import deepcopy
 from typing import Dict, Union
 import os
 
@@ -14,7 +13,7 @@ from equinet.nn_utils import param_count
 from equinet.train import cross_validate, run_training
 from equinet.utils import create_logger, makedirs, timeit
 from equinet.optuna_utils import add_manual_trials, build_search_space, build_storage, \
-    create_study, get_completed_trials, load_manual_trials, \
+    build_trial_args, create_study, get_completed_trials, load_manual_trials, \
     save_config, suggest_hyperparameters
 
 
@@ -74,25 +73,27 @@ def hyperopt(args: HyperoptArgs) -> None:
         logger.info(f"Initiating trial {trial.number}")
         hyperparams: Dict[str, Union[int, float]] = suggest_hyperparameters(trial, space)
 
-        # Copy args
-        hyper_args = deepcopy(args)
+        # Collect the argument values this trial uses, then have the args rebuilt from the
+        # originally parsed namespace with them applied, so that process_args derives everything
+        # from this trial's values rather than from the ones the job was launched with.
+        overrides: Dict[str, Union[int, float]] = dict(hyperparams)
 
-        # Update args with hyperparams
         if args.save_dir is not None:
             folder_name = f"trial_{trial.number}"
-            hyper_args.save_dir = os.path.join(hyper_args.save_dir, folder_name)
-
-        for key, value in hyperparams.items():
-            setattr(hyper_args, key, value)
+            overrides["save_dir"] = os.path.join(args.save_dir, folder_name)
 
         if "linked_hidden_size" in hyperparams:
-            hyper_args.ffn_hidden_size = hyperparams["linked_hidden_size"]
-            hyper_args.hidden_size = hyperparams["linked_hidden_size"]
+            overrides["ffn_hidden_size"] = hyperparams["linked_hidden_size"]
+            overrides["hidden_size"] = hyperparams["linked_hidden_size"]
 
+        # max_lr is only in hyperparams when it is itself being searched over
+        max_lr = hyperparams.get("max_lr", args.max_lr)
         if "init_lr_ratio" in hyperparams:
-            hyper_args.init_lr = hyperparams["max_lr"] * hyperparams["init_lr_ratio"]
+            overrides["init_lr"] = max_lr * hyperparams["init_lr_ratio"]
         if "final_lr_ratio" in hyperparams:
-            hyper_args.final_lr = hyperparams["max_lr"] * hyperparams["final_lr_ratio"]
+            overrides["final_lr"] = max_lr * hyperparams["final_lr_ratio"]
+
+        hyper_args = build_trial_args(args, overrides)
 
         # Cross validate
         mean_score, std_score = cross_validate(args=hyper_args, train_func=run_training)

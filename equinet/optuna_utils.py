@@ -4,6 +4,7 @@ import csv
 import json
 import logging
 import os
+from copy import deepcopy
 from typing import Any, Dict, List, Sequence
 
 import numpy as np
@@ -177,6 +178,36 @@ def suggest_hyperparameters(
     :return: A dictionary keyed by the parameter names of the sampled values.
     """
     return {key: parameter.suggest(key, trial) for key, parameter in space.items()}
+
+
+def build_trial_args(args: HyperoptArgs, overrides: Dict[str, Any]) -> HyperoptArgs:
+    """
+    Builds the arguments for a single trial.
+
+    The trial's values are applied to the arguments as they were originally parsed, and
+    ``process_args`` is then run over the result, so that everything derived from a searched
+    argument is derived from the value that trial actually uses. Assigning the values onto an
+    already processed arguments object instead would leave those derivations stale: they run once,
+    when the job is launched, and would still reflect the arguments it was launched with.
+
+    This is a function rather than a method on :class:`~equinet.args.HyperoptArgs` because
+    ``Tap.as_dict`` reports any attribute name it does not recognise from the base class. A method
+    would be reported as a bound method, saved into every model checkpoint, and would carry the
+    whole arguments object into the checkpoint with it.
+
+    :param args: The processed arguments of the hyperparameter optimization job.
+    :param overrides: The argument values for this trial, keyed by argument name.
+    :return: A new arguments object, processed and ready to be trained with.
+    """
+    trial_args = deepcopy(args)
+    trial_args.__dict__.update(deepcopy(args._raw_arg_values))
+
+    for key, value in overrides.items():
+        setattr(trial_args, key, value)
+
+    trial_args.process_args()
+
+    return trial_args
 
 
 def build_storage(dir_path: str) -> JournalStorage:
