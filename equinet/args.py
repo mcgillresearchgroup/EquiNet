@@ -1117,11 +1117,13 @@ class HyperoptArgs(TrainArgs):
         init_lr, max_lr, self_activity_correction, self_activity_lambda,
         warmup_epochs, weight_decay, wohl_order
 
-    Some parameters are only searched when another parameter makes them meaningful, and so are not keywords of
-    their own:
-        aggregation_norm - searched whenever norm aggregation is possible, meaning either that aggregation is
-            being searched, or that norm is the aggregation being trained with. A trial that does not use norm
-            aggregation does not search it.
+    Some parameters are only searched when another argument makes them meaningful:
+        aggregation_norm - not a keyword of its own. Searched whenever norm aggregation is possible, meaning
+            either that aggregation is being searched, or that norm is the aggregation being trained with. A
+            trial that does not use norm aggregation does not search it.
+        wohl_order - only searched when training a `--vle` of wohl or nrtl-wohl, which are the only models that
+            use it. It is dropped from the `all` keyword for any other model, and asking for it by name against
+            another model is an error.
 
     dropout and weight_decay each include the choice of not using them at all. A trial either switches the
     parameter off, giving exactly zero, or searches a value for it.
@@ -1199,6 +1201,18 @@ class HyperoptArgs(TrainArgs):
         # aggregation search could choose norm, or when norm is the aggregation being trained with.
         if "aggregation" in search_parameters or self.aggregation == "norm":
             search_parameters.add("aggregation_norm")
+        # The Wohl expansion order is only used by the Wohl activity models. Unlike the aggregation
+        # norm this is not a per-trial condition, because vle is fixed for the whole job, so asking
+        # for it against another model is a mistake worth reporting rather than quietly ignoring.
+        if self.vle not in ["wohl", "nrtl-wohl"]:
+            if "wohl_order" in self.search_parameter_keywords:
+                raise ValueError(
+                    f"`--search_parameter_keywords` includes wohl_order, but wohl_order is only "
+                    f"used by the 'wohl' and 'nrtl-wohl' activity models and this job is training "
+                    f"`--vle {self.vle}`. Remove wohl_order from the search, or train one of those "
+                    f"models."
+                )
+            search_parameters.discard("wohl_order")
         # Sorted, not just listed: iteration order of a set of strings varies between processes,
         # which would make the sampler consume its random stream in a different order each run and
         # defeat the reproducibility that hyperopt_seed is meant to provide.
