@@ -182,7 +182,7 @@ def build_search_space(
         "aggregation_norm": IntParameter(low=1, high=200),
         "batch_size": IntParameter(low=5, high=200, step=5),
         "depth": IntParameter(low=2, high=6),
-        "dropout": ZeroOrValueParameter(low=1e-2, high=4e-1),
+        "dropout": ZeroOrValueParameter(low=1e-2, high=4e-1, log=True),
         "ffn_hidden_size": IntParameter(low=300, high=2400, step=100),
         "ffn_num_layers": IntParameter(low=2, high=6),
         "hidden_size": IntParameter(low=300, high=2400, step=100),
