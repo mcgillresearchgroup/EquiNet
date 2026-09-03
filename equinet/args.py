@@ -2,6 +2,7 @@ import json
 import os
 from tempfile import TemporaryDirectory
 import pickle
+from copy import deepcopy
 from typing import List, Optional
 from typing_extensions import Literal
 from packaging import version
@@ -12,6 +13,7 @@ from tap import Tap  # pip install typed-argument-parser (https://github.com/swa
 import numpy as np
 
 import equinet.data.utils
+from equinet.constants import HYPEROPT_STUDY_NAME
 from equinet.data import set_cache_mol, empty_cache
 from equinet.features import get_available_features_generators
 
@@ -1070,15 +1072,26 @@ class HyperoptArgs(TrainArgs):
 
     num_iters: int = 20
     """Number of hyperparameter choices to try."""
-    hyperopt_seed: int = 0
-    """The initial seed used for choosing parameters in hyperopt trials. In each trial, the seed will be increased by one, skipping seeds previously used."""
+    hyperopt_seed: int = None
+    """(Optional) Random seed for this instance's parameter sampler, for reproducing a single-instance search.
+
+    Leave this unset when running multiple instances in parallel. Every instance sharing a checkpoint directory
+    would start from the same random state and propose the same initial parameters, so the instances would
+    duplicate each other's work instead of covering the search space. Unset, each instance draws its own random
+    stream and the instances explore independently.
+
+    Note that a parallel search is not reproducible from a seed in any case, because what the sampler proposes
+    depends on which trials happen to be visible in the shared journal file at the moment it samples."""
     config_save_path: str
     """Path to :code:`.json` file where best hyperparameter settings will be written."""
     log_dir: str = None
     """(Optional) Path to a directory where all results of the hyperparameter optimization will be written."""
     hyperopt_checkpoint_dir: str = None
-    """Path to a directory where hyperopt completed trial data is stored. Hyperopt job will include these trials if restarted.
-    Can also be used to run multiple instances in parallel if they share the same checkpoint directory."""
+    """Path to a directory where the Optuna journal file of completed trial data is stored. Hyperopt job will include these trials if restarted.
+    Can also be used to run multiple instances in parallel if they share the same checkpoint directory, including across machines on a shared filesystem."""
+    hyperopt_study_name: str = HYPEROPT_STUDY_NAME
+    """Name of the Optuna study within the journal file. Only instances using the same study name share trials with each other,
+    so separate searches can safely share a checkpoint directory by using different names."""
     startup_random_iters: int = None
     """The initial number of trials that will be randomly specified before TPE algorithm is used to select the rest.
     By default will be half the total number of trials."""
@@ -1093,17 +1106,46 @@ class HyperoptArgs(TrainArgs):
         basic - the default set of hyperparameters for search: depth, ffn_num_layers, dropout, and linked_hidden_size.
         linked_hidden_size - search for hidden_size and ffn_hidden_size, but constrained for them to have the same value.
             If either of the component words are entered in separately, both are searched independently.
-        learning_rate - search for max_lr, init_lr, final_lr, and warmup_epochs. The search for init_lr and final_lr values
-            are defined as fractions of the max_lr value. The search for warmup_epochs is as a fraction of the total epochs used.
-        all - include search for all 13 inidividual keyword options
+        learning_rate - search for max_lr, init_lr, final_lr, and warmup_epochs. init_lr and final_lr are searched over
+            their own range, truncated at the max_lr the trial is using so that neither exceeds it. warmup_epochs is
+            searched up to half the total epochs used.
+        all - include search for all of the individual keyword options
 
     Individual supported parameters:
-        activation, aggregation, aggregation_norm, batch_size, depth,
+        activation, aggregation, batch_size, depth,
         dropout, ffn_hidden_size, ffn_num_layers, final_lr, hidden_size,
-        init_lr, max_lr, warmup_epochs, weight_decay
+        init_lr, max_lr, self_activity_correction, self_activity_lambda,
+        warmup_epochs, weight_decay, wohl_order
+
+    Some parameters are only searched when another argument makes them meaningful:
+        aggregation_norm - not a keyword of its own. Searched whenever norm aggregation is possible, meaning
+            either that aggregation is being searched, or that norm is the aggregation being trained with. A
+            trial that does not use norm aggregation does not search it.
+        wohl_order - only searched when training a `--vle` of wohl or nrtl-wohl, which are the only models that
+            use it. It is dropped from the `all` keyword for any other model, and asking for it by name against
+            another model is an error.
+
+    dropout and weight_decay each include the choice of not using them at all. A trial either switches the
+    parameter off, giving exactly zero, or searches a value for it.
+
+    Note that vle, vp and fugacity_balance cannot be searched over. Each trial is set up by
+    assigning attributes onto an already processed arguments object, so the derivations that
+    normally run at parse time do not run again. vle determines number_of_molecules and
+    mpn_shared, and fugacity_balance selects the squared_log_fugacity_difference loss function,
+    which cannot be requested any other way. A trial that changed them would therefore be
+    trained with settings that do not match the value being searched.
     """
 
     def process_args(self) -> None:
+        # Snapshot the arguments exactly as parsed, before any derivation here or in TrainArgs
+        # runs. build_trial_args rebuilds each trial from this namespace so that process_args can
+        # run again with the trial's hyperparameters already in place. Assigning them onto an
+        # already processed object instead would leave everything derived from them stale.
+        if not hasattr(self, "_raw_arg_values"):
+            self._raw_arg_values = deepcopy(
+                {key: value for key, value in self.__dict__.items() if not key.startswith("_")}
+            )
+
         super(HyperoptArgs, self).process_args()
 
         self.hyperparateter_optimization = True
@@ -1119,20 +1161,20 @@ class HyperoptArgs(TrainArgs):
             self.startup_random_iters = self.num_iters // 2
 
         # Construct set of search parameters
+        # aggregation_norm is not offered as a keyword of its own: it is only meaningful for norm
+        # aggregation, and is added below whenever that is a possibility.
         supported_keywords = [
             "basic", "learning_rate", "linked_hidden_size", "all",
-            "activation", "aggregation", "aggregation_norm", "batch_size", "depth",
+            "activation", "aggregation", "batch_size", "depth",
             "dropout", "ffn_hidden_size", "ffn_num_layers", "final_lr", "hidden_size",
             "init_lr", "max_lr", "warmup_epochs", "weight_decay",
-            "wohl_order", "self_activity_correction", "self_activity_lambda", "vp", "vle",
-            "fugacity_balance",            
+            "wohl_order", "self_activity_correction", "self_activity_lambda",
         ] #TODO add supported keywords
         supported_parameters = [
-            "activation", "aggregation", "aggregation_norm", "batch_size", "depth",
-            "dropout", "ffn_hidden_size", "ffn_num_layers", "final_lr_ratio", "hidden_size",
-            "init_lr_ratio", "linked_hidden_size", "max_lr", "warmup_epochs", "weight_decay",
-            "wohl_order", "self_activity_correction", "self_activity_lambda", "vp", "vle",
-            "fugacity_balance",            
+            "activation", "aggregation", "batch_size", "depth",
+            "dropout", "ffn_hidden_size", "ffn_num_layers", "final_lr", "hidden_size",
+            "init_lr", "linked_hidden_size", "max_lr", "warmup_epochs", "weight_decay",
+            "wohl_order", "self_activity_correction", "self_activity_lambda",
         ] #TODO add supported parameters
         unsupported_keywords = set(self.search_parameter_keywords) - set(supported_keywords)
         if len(unsupported_keywords) != 0:
@@ -1148,18 +1190,53 @@ class HyperoptArgs(TrainArgs):
         if "basic" in self.search_parameter_keywords:
             search_parameters.update(["depth", "ffn_num_layers", "dropout", "linked_hidden_size"])
         if "learning_rate" in self.search_parameter_keywords:
-            search_parameters.update(["max_lr", "init_lr_ratio", "final_lr_ratio", "warmup_epochs"])
+            search_parameters.update(["max_lr", "init_lr", "final_lr", "warmup_epochs"])
         for kw in self.search_parameter_keywords:
             if kw in supported_parameters:
                 search_parameters.add(kw)
-        if "init_lr" in self.search_parameter_keywords:
-            search_parameters.add("init_lr_ratio")
-        if "final_lr" in self.search_parameter_keywords:
-            search_parameters.add("final_lr_ratio")
         if "linked_hidden_size" in search_parameters and ("hidden_size" in search_parameters or "ffn_hidden_size" in search_parameters):
             search_parameters.remove("linked_hidden_size")
             search_parameters.update(["hidden_size", "ffn_hidden_size"])
-        self.search_parameters = list(search_parameters)
+        # The aggregation norm is only used by norm aggregation, so it is searched when the
+        # aggregation search could choose norm, or when norm is the aggregation being trained with.
+        if "aggregation" in search_parameters or self.aggregation == "norm":
+            search_parameters.add("aggregation_norm")
+        # The Wohl expansion order is only used by the Wohl activity models. Unlike the aggregation
+        # norm this is not a per-trial condition, because vle is fixed for the whole job, so asking
+        # for it against another model is a mistake worth reporting rather than quietly ignoring.
+        if self.vle not in ["wohl", "nrtl-wohl"]:
+            if "wohl_order" in self.search_parameter_keywords:
+                raise ValueError(
+                    f"`--search_parameter_keywords` includes wohl_order, but wohl_order is only "
+                    f"used by the 'wohl' and 'nrtl-wohl' activity models and this job is training "
+                    f"`--vle {self.vle}`. Remove wohl_order from the search, or train one of those "
+                    f"models."
+                )
+            search_parameters.discard("wohl_order")
+        # Sorted, not just listed: iteration order of a set of strings varies between processes,
+        # which would make the sampler consume its random stream in a different order each run and
+        # defeat the reproducibility that hyperopt_seed is meant to provide.
+        self.search_parameters = sorted(search_parameters)
+
+        # A config file is applied inside TrainArgs.process_args, which runs after each trial's
+        # hyperparameters are in place, so a config entry would silently win over the search.
+        # Nothing here may become a new public attribute of this class: Tap.as_dict picks up any
+        # name it does not recognise from the base class, so a method would be stored in saved
+        # checkpoints as a bound method and drag this whole object in with it.
+        if self.config_path is not None:
+            trial_arguments = set(self.search_parameters)
+            if "linked_hidden_size" in trial_arguments:
+                trial_arguments.update(["hidden_size", "ffn_hidden_size"])
+
+            with open(self.config_path) as f:
+                conflicts = set(json.load(f).keys()) & trial_arguments
+            if conflicts:
+                raise ValueError(
+                    f"The config file {self.config_path} sets {sorted(conflicts)}, which the "
+                    f"hyperparameter search also varies. The config value would override the "
+                    f"searched value in every trial. Remove these entries from the config file, or "
+                    f"remove the corresponding parameters from --search_parameter_keywords."
+                )
 
 
 class SklearnTrainArgs(TrainArgs):
