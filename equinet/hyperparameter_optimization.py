@@ -71,27 +71,17 @@ def hyperopt(args: HyperoptArgs) -> None:
     # Define hyperparameter optimization
     def objective(trial: optuna.Trial) -> float:
         logger.info(f"Initiating trial {trial.number}")
-        hyperparams: Dict[str, Union[int, float]] = suggest_hyperparameters(trial, space)
+        # suggest_hyperparameters returns values keyed by the argument names they set, so they can
+        # be applied directly. The args are then rebuilt from the originally parsed namespace with
+        # them in place, so that process_args derives everything from this trial's values rather
+        # than from the ones the job was launched with.
+        hyperparams: Dict[str, Union[int, float]] = suggest_hyperparameters(trial, space, args)
 
-        # Collect the argument values this trial uses, then have the args rebuilt from the
-        # originally parsed namespace with them applied, so that process_args derives everything
-        # from this trial's values rather than from the ones the job was launched with.
         overrides: Dict[str, Union[int, float]] = dict(hyperparams)
 
         if args.save_dir is not None:
             folder_name = f"trial_{trial.number}"
             overrides["save_dir"] = os.path.join(args.save_dir, folder_name)
-
-        if "linked_hidden_size" in hyperparams:
-            overrides["ffn_hidden_size"] = hyperparams["linked_hidden_size"]
-            overrides["hidden_size"] = hyperparams["linked_hidden_size"]
-
-        # max_lr is only in hyperparams when it is itself being searched over
-        max_lr = hyperparams.get("max_lr", args.max_lr)
-        if "init_lr_ratio" in hyperparams:
-            overrides["init_lr"] = max_lr * hyperparams["init_lr_ratio"]
-        if "final_lr_ratio" in hyperparams:
-            overrides["final_lr"] = max_lr * hyperparams["final_lr_ratio"]
 
         hyper_args = build_trial_args(args, overrides)
 
@@ -199,7 +189,6 @@ def hyperopt(args: HyperoptArgs) -> None:
     save_config(
         config_path=args.config_save_path,
         hyperparams_dict=best_result["hyperparams"],
-        max_lr=args.max_lr,
     )
 
 

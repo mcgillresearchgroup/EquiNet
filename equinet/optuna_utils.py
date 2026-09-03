@@ -92,33 +92,67 @@ class CategoricalParameter(SearchParameter):
         return {name: CategoricalDistribution(self.options)}
 
 
-class ZeroOrLogUniformParameter(SearchParameter):
+class ZeroOrValueParameter(SearchParameter):
     """
-    A search parameter that is either exactly zero or drawn log-uniformly from a positive range.
+    A search parameter that is either switched off, and exactly zero, or switched on and drawn
+    from a positive range.
 
-    This is a conditional search space: the magnitude is only sampled when the nonzero branch
-    is taken, so trials on the zero branch never record a magnitude parameter.
+    Whether the parameter is used at all is itself part of the search. This is a conditional
+    search space: the magnitude is only sampled on the nonzero branch, so trials that switch the
+    parameter off never record a magnitude parameter at all, rather than recording a zero that
+    the sampler would treat as an ordinary point of the range.
     """
 
-    def __init__(self, low: float, high: float):
+    def __init__(self, low: float, high: float, log: bool = False):
         self.low = low
         self.high = high
+        self.log = log
 
     def suggest(self, name: str, trial: optuna.Trial) -> float:
         if trial.suggest_categorical(f"{name}_nonzero", [False, True]):
-            return trial.suggest_float(f"{name}_magnitude", self.low, self.high, log=True)
+            return trial.suggest_float(f"{name}_magnitude", self.low, self.high, log=self.log)
         return 0.0
 
     def distributions(self, name: str) -> Dict[str, BaseDistribution]:
         return {
             f"{name}_nonzero": CategoricalDistribution([False, True]),
-            f"{name}_magnitude": FloatDistribution(self.low, self.high, log=True),
+            f"{name}_magnitude": FloatDistribution(self.low, self.high, log=self.log),
         }
 
     def encode(self, name: str, value: Any) -> Dict[str, Any]:
         if value == 0:
             return {f"{name}_nonzero": False}
         return {f"{name}_nonzero": True, f"{name}_magnitude": value}
+
+
+class BoundedLogFloatParameter(SearchParameter):
+    """
+    A log-uniform search parameter whose upper bound is decided by another parameter.
+
+    ``init_lr`` and ``final_lr`` are searched directly over their own range rather than as a
+    fraction of ``max_lr``, but neither is meaningful above the maximum learning rate, so the
+    range is truncated at whatever ``max_lr`` the trial is using. Optuna records the bounds it
+    actually sampled from with each trial, so the bound is allowed to differ from trial to trial.
+    """
+
+    def __init__(self, low: float, high: float):
+        self.low = low
+        self.high = high
+
+    def _high(self, upper_bound: float) -> float:
+        # A max_lr at or below the floor collapses the range to a single point, which is allowed
+        return max(self.low, min(self.high, upper_bound))
+
+    def suggest(self, name: str, trial: optuna.Trial, upper_bound: float = None) -> float:
+        return trial.suggest_float(name, self.low, self._high(upper_bound), log=True)
+
+    def distributions(self, name: str, upper_bound: float = None) -> Dict[str, BaseDistribution]:
+        return {name: FloatDistribution(self.low, self._high(upper_bound), log=True)}
+
+
+# Parameters that are only searched, or whose range is only known, once another parameter has
+# been sampled. They are suggested after the rest, in this order.
+DEPENDENT_PARAMETERS = ("aggregation_norm", "init_lr", "final_lr")
 
 
 def build_search_space(
@@ -142,23 +176,29 @@ def build_search_space(
         # any other way. Searching over them silently trains against the wrong loss.
         "wohl_order": IntParameter(low=3, high=5),
         "self_activity_correction": CategoricalParameter([True, False]),
-        "self_activity_lambda": ZeroOrLogUniformParameter(low=1e-5, high=1e-1),
+        "self_activity_lambda": ZeroOrValueParameter(low=1e-5, high=1e-1, log=True),
         "aggregation": CategoricalParameter(["mean", "sum", "norm"]),
+        # Only reached when the aggregation in use is "norm"; see suggest_hyperparameters
         "aggregation_norm": IntParameter(low=1, high=200),
         "batch_size": IntParameter(low=5, high=200, step=5),
         "depth": IntParameter(low=2, high=6),
-        "dropout": FloatParameter(low=0.0, high=0.4, step=0.05),
+        "dropout": ZeroOrValueParameter(low=1e-2, high=4e-1),
         "ffn_hidden_size": IntParameter(low=300, high=2400, step=100),
         "ffn_num_layers": IntParameter(low=2, high=6),
-        "final_lr_ratio": FloatParameter(low=1e-4, high=1.0, log=True),
         "hidden_size": IntParameter(low=300, high=2400, step=100),
-        "init_lr_ratio": FloatParameter(low=1e-4, high=1.0, log=True),
+        # hidden_size and ffn_hidden_size constrained to one shared value, rather than a
+        # parameter of its own; see suggest_hyperparameters
         "linked_hidden_size": IntParameter(low=300, high=2400, step=100),
         "max_lr": FloatParameter(low=1e-6, high=1e-2, log=True),
-        "weight_decay": FloatParameter(low=1e-6, high=1e-1, log=True),
+        # Searched over their own range, truncated at the max_lr the trial is using
+        "init_lr": BoundedLogFloatParameter(low=1e-6, high=1e-2),
+        "final_lr": BoundedLogFloatParameter(low=1e-6, high=1e-2),
+        "weight_decay": ZeroOrValueParameter(low=1e-6, high=1e-1, log=True),
     }  # TODO add any new parameters here
     if train_epochs is not None:
-        available_spaces["warmup_epochs"] = IntParameter(low=1, high=train_epochs // 2)
+        available_spaces["warmup_epochs"] = IntParameter(
+            low=1, high=max(1, train_epochs // 2)
+        )
 
     space = {}
     for key in search_parameters:
@@ -168,16 +208,49 @@ def build_search_space(
 
 
 def suggest_hyperparameters(
-    trial: optuna.Trial, space: Dict[str, SearchParameter]
+    trial: optuna.Trial, space: Dict[str, SearchParameter], args: HyperoptArgs
 ) -> Dict[str, Any]:
     """
     Samples one set of hyperparameters from the search space.
 
+    Most parameters are sampled independently, in a fixed order so that a seeded sampler draws
+    them the same way on every run. The rest depend on a parameter sampled before them: the
+    aggregation norm is only meaningful for norm aggregation, and the initial and final learning
+    rates are bounded above by the maximum learning rate. Where such a parameter is not itself
+    being searched, the value the job was launched with is used instead.
+
     :param trial: The Optuna trial to sample from.
     :param space: The search space, as returned by :func:`build_search_space`.
-    :return: A dictionary keyed by the parameter names of the sampled values.
+    :param args: The arguments of the hyperparameter optimization job, for the values of any
+                 parameters that are depended on but not searched.
+    :return: A dictionary keyed by the argument names of the sampled values.
     """
-    return {key: parameter.suggest(key, trial) for key, parameter in space.items()}
+    hyperparams: Dict[str, Any] = {}
+
+    for key in sorted(space):
+        if key in DEPENDENT_PARAMETERS or key == "linked_hidden_size":
+            continue
+        hyperparams[key] = space[key].suggest(key, trial)
+
+    # One searched value shared by both hidden sizes, recorded under the name it is searched by
+    if "linked_hidden_size" in space:
+        linked_hidden_size = space["linked_hidden_size"].suggest("linked_hidden_size", trial)
+        hyperparams["hidden_size"] = linked_hidden_size
+        hyperparams["ffn_hidden_size"] = linked_hidden_size
+
+    if "aggregation_norm" in space:
+        aggregation = hyperparams.get("aggregation", args.aggregation)
+        if aggregation == "norm":
+            hyperparams["aggregation_norm"] = space["aggregation_norm"].suggest(
+                "aggregation_norm", trial
+            )
+
+    max_lr = hyperparams.get("max_lr", args.max_lr)
+    for key in ("init_lr", "final_lr"):
+        if key in space:
+            hyperparams[key] = space[key].suggest(key, trial, upper_bound=max_lr)
+
+    return hyperparams
 
 
 def build_trial_args(args: HyperoptArgs, overrides: Dict[str, Any]) -> HyperoptArgs:
@@ -295,8 +368,8 @@ def load_manual_trials(
         ("num_folds", None),
         ("ensemble_size", None),
         ("max_lr", "max_lr"),
-        ("init_lr", "init_lr_ratio"),
-        ("final_lr", "final_lr_ratio"),
+        ("init_lr", "init_lr"),
+        ("final_lr", "final_lr"),
         ("activation", "activation"),
         ("metric", None),
         ("bias", None),
@@ -364,22 +437,43 @@ def load_manual_trials(
                         f"Manual trial {trial_dir} has different training argument {arg} than the hyperparameter optimization search trials."
                     )
 
-        # Construct the hyperparameters of the trial, and the Optuna parameters that would produce them
+        # Construct the hyperparameters of the trial, and the Optuna parameters that would produce
+        # them. This mirrors suggest_hyperparameters: the dependent parameters are only recorded
+        # when the trial they came from actually used them, and the learning rates carry the
+        # bound that the trial's own max_lr implies.
         hyperparams = {}
         params = {}
         distributions = {}
-        for key in param_keys:
-            if key == "init_lr_ratio":
-                value = trial_args["init_lr"] / trial_args["max_lr"]
-            elif key == "final_lr_ratio":
-                value = trial_args["final_lr"] / trial_args["max_lr"]
-            elif key == "linked_hidden_size":
-                value = trial_args["hidden_size"]
-            else:
-                value = trial_args[key]
+
+        def record(key: str, name: str, value: Any, **kwargs) -> None:
+            """Records one value under its argument name, and under the name it is searched by."""
             hyperparams[key] = value
-            params.update(space[key].encode(key, value))
-            distributions.update(space[key].distributions(key))
+            params.update(space[name].encode(name, value))
+            distributions.update(space[name].distributions(name, **kwargs))
+
+        for key in param_keys:
+            if key in DEPENDENT_PARAMETERS or key == "linked_hidden_size":
+                continue
+            record(key, key, trial_args[key])
+
+        if "linked_hidden_size" in param_keys:
+            record("hidden_size", "linked_hidden_size", trial_args["hidden_size"])
+            hyperparams["ffn_hidden_size"] = trial_args["hidden_size"]
+
+        if "aggregation_norm" in param_keys:
+            if trial_args["aggregation"] == "norm":
+                record("aggregation_norm", "aggregation_norm", trial_args["aggregation_norm"])
+
+        max_lr = trial_args["max_lr"]
+        for key in ("init_lr", "final_lr"):
+            if key in param_keys:
+                if trial_args[key] > max_lr:
+                    raise ValueError(
+                        f"The manual trial in {trial_dir} has a {key} of {trial_args[key]} that is "
+                        f"greater than its max_lr of {max_lr}, which the hyperparameter search "
+                        f"would never produce."
+                    )
+                record(key, key, trial_args[key], upper_bound=max_lr)
 
         # Conditional parameters only record the branch that was taken
         distributions = {key: value for key, value in distributions.items() if key in params}
@@ -446,38 +540,17 @@ def get_completed_trials(study: optuna.Study) -> List[optuna.trial.FrozenTrial]:
     ]
 
 
-def save_config(config_path: str, hyperparams_dict: dict, max_lr: float) -> None:
+def save_config(config_path: str, hyperparams_dict: dict) -> None:
     """
     Saves the hyperparameters for the best trial to a config json file.
 
+    The hyperparameters are already keyed by the training argument names they set, so they are
+    written out as they are.
+
     :param config_path: File path for the config json file.
     :param hyperparams_dict: A dictionary of hyperparameters found during the search.
-    :param max_lr: The maximum learning rate value, to be used if not a search parameter.
     """
     makedirs(config_path, isfile=True)
 
-    save_dict = {}
-
-    for key in hyperparams_dict:
-        if key == "linked_hidden_size":
-            save_dict["hidden_size"] = hyperparams_dict["linked_hidden_size"]
-            save_dict["ffn_hidden_size"] = hyperparams_dict["linked_hidden_size"]
-        elif key == "init_lr_ratio":
-            if "max_lr" not in hyperparams_dict:
-                save_dict["init_lr"] = hyperparams_dict[key] * max_lr
-            else:
-                save_dict["init_lr"] = (
-                    hyperparams_dict[key] * hyperparams_dict["max_lr"]
-                )
-        elif key == "final_lr_ratio":
-            if "max_lr" not in hyperparams_dict:
-                save_dict["final_lr"] = hyperparams_dict[key] * max_lr
-            else:
-                save_dict["final_lr"] = (
-                    hyperparams_dict[key] * hyperparams_dict["max_lr"]
-                )
-        else:
-            save_dict[key] = hyperparams_dict[key]
-
     with open(config_path, "w") as f:
-        json.dump(save_dict, f, indent=4, sort_keys=True)
+        json.dump(dict(hyperparams_dict), f, indent=4, sort_keys=True)
