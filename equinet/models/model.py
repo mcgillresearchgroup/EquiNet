@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 from .mpn import MPN
-from .ffn import build_ffn, binary_equivariant_readout
+from .ffn import binary_permutation_readout, build_ffn, binary_equivariant_readout
 from equinet.args import TrainArgs
 from equinet.features import BatchMolGraph
 from equinet.nn_utils import initialize_weights
@@ -68,6 +68,8 @@ class MoleculeModel(nn.Module):
                 self.vle_output_size = 3 + wohl_number_parameters_dict[self.wohl_order]  # NRTL params + Wohl params
             elif self.vle == "nrtl":
                 self.vle_output_size = 3 # tau12 tau21 alpha
+            elif self.vle == "alt_nrtl":
+                self.vle_output_size = 2 # g12, alpha
             elif self.vle == "uniquac":
                 self.vle_output_size = 2  # tau12, tau21
             elif self.vle == "freestyle":
@@ -96,6 +98,9 @@ class MoleculeModel(nn.Module):
                     raise ValueError(f"Unsupported equivariant method with wohl order {self.wohl_order}.")
             elif self.vle == "nrtl":
                 self.output_equivariant_pairs = [(0,1)] # tau_12, tau_21 alpha
+                self.features_equivariant_pairs = [] # T
+            elif self.vle == "alt_nrtl":
+                self.output_equivariant_pairs = [] # g12, alpha
                 self.features_equivariant_pairs = [] # T
             elif self.vle == "nrtl-wohl":
                 nrtl_pairs = [(0,1)]  # tau_12, tau_21 alpha
@@ -553,6 +558,21 @@ class MoleculeModel(nn.Module):
                     # No self-correction → use AB closed-form lnγ directly
                     ln_gamma_1, ln_gamma_2 = ln1_ab, ln2_ab
 
+            elif self.vle == "alt_nrtl":
+                output_11, output_12, output_21, output_22 = binary_permutation_readout(encoding_1, encoding_2, features_batch, self.readout, [])
+                alpha = (output_12[:,[0]] + output_21[:,[0]])/2
+                g12 = output_12[:,[1]]
+                g21 = output_21[:,[1]]
+                g11 = output_11[:,[1]]
+                g22 = output_22[:,[1]]
+                tau12 = (g12 - g22)/output_temperature_batch
+                tau21 = (g21 - g11)/output_temperature_batch
+                G12 = torch.exp(-alpha * tau12)
+                G21 = torch.exp(-alpha * tau21)
+                ln_gamma_1 = x_2**2 * (tau21 * G21**2/(x_1 + x_2 * G21)**2 + tau12 * G12/(x_2 + x_1 * G12)**2)
+                ln_gamma_2 = x_1**2 * (tau12 * G12**2/(x_2 + x_1 * G12)**2 + tau21 * G21/(x_1 + x_2 * G21)**2)
+
+
             elif self.vle == "nrtl-wohl":
                 # AB (hybrid)
                 ln1_ab, ln2_ab, gE_ab = nrtl_wohl_ln_gamma_and_gE(
@@ -631,10 +651,11 @@ class MoleculeModel(nn.Module):
             else:
                 raise ValueError(f"Unsupported VLE model {self.vle}.")
             
-            if self.self_activity_correction and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac"]:
+            # alt_nrtl already bakes self-consistency into its g11/g12/g21/g22 permutation readout
+            if self.self_activity_correction and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac", "alt_nrtl"]:
                 ln_gamma_1 = ln_gamma_1 - x_1 * ln_gamma_1_1 - x_2 * ln_gamma_1_2
                 ln_gamma_2 = ln_gamma_2 - x_1 * ln_gamma_2_1 - x_2 * ln_gamma_2_2
-            if self.self_activity_lambda > 0 and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac"]:
+            if self.self_activity_lambda > 0 and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac", "alt_nrtl"]:
                 regularization = self.self_activity_lambda * (
                     torch.sum(ln_gamma_1_1**2) + torch.sum(ln_gamma_1_2**2) +
                     torch.sum(ln_gamma_2_1**2) + torch.sum(ln_gamma_2_2**2)

@@ -155,6 +155,7 @@ def get_wohl_parameters(
 
     return names, coefficients
 
+
 def forward_vle_nrtl(
     output: torch.Tensor,
     x_1: torch.Tensor,
@@ -175,6 +176,7 @@ def forward_vle_nrtl(
     
     return ln_gamma_1, ln_gamma_2
 
+
 def get_nrtl_parameters(
     output: torch.Tensor,
     molecule_id: int = None,
@@ -188,6 +190,7 @@ def get_nrtl_parameters(
     if molecule_id is not None:
         names = [f"{name}_{molecule_id}" for name in names]
     return names, output
+
 
 def forward_vle_nrtl_wohl(
     output: torch.Tensor,
@@ -220,12 +223,14 @@ def forward_vle_nrtl_wohl(
 
     return ln_gamma_1, ln_gamma_2
 
+
 def _gE_over_RT_from_ln_gamma(ln_gamma_1: torch.Tensor,
                               ln_gamma_2: torch.Tensor,
                               x1: torch.Tensor,
                               x2: torch.Tensor) -> torch.Tensor:
     # Consistent with excess-Gibbs definition for activity models
     return x1 * ln_gamma_1 + x2 * ln_gamma_2
+
 
 def wohl_ln_gamma_and_gE(
     output: torch.Tensor,
@@ -238,6 +243,7 @@ def wohl_ln_gamma_and_gE(
     ln1, ln2 = forward_vle_wohl(output, wohl_order, x1, x2, q1, q2)
     gE_over_RT = _gE_over_RT_from_ln_gamma(ln1, ln2, x1, x2)
     return ln1, ln2, gE_over_RT
+
 
 def nrtl_wohl_ln_gamma_and_gE(
     output: torch.Tensor,
@@ -386,6 +392,7 @@ def get_uniquac_parameters(
 
     return names, parameters
 
+
 def forward_vle_freestyle(
     output: torch.Tensor,  # size(batch, 1)
     features: torch.Tensor, # size(batch, 3) x1, x2, T
@@ -408,6 +415,7 @@ def forward_vle_freestyle(
 
 
     return ln_gamma_1, ln_gamma_2
+
 
 def unscale_vle_parameters(
         parameters: np.ndarray,

@@ -509,7 +509,7 @@ class TrainArgs(CommonArgs):
     """The functional form to use for vapor pressure prediction. If specified and vle is specified, will use intrinsic vapor pressure prediction."""
     noisy_temperature: float = None
     """Whether to use a noise factor to smooth the prediction of vapor pressure parameters."""
-    vle: Literal["basic", "activity", "wohl", "nrtl", "nrtl-wohl", "uniquac", "freestyle"] = None
+    vle: Literal["basic", "activity", "wohl", "nrtl", "nrtl-wohl", "uniquac", "freestyle", "alt_nrtl"] = None
     """Which VLE model to use. Will use tabulated vapor pressures unless a vp option is also specified, then will use intrinsic vapor pressure prediction."""
     wohl_order: Literal[3,4,5] = 3  # default to 3rd-order Wohl
     """The highest interaction order to be considered in a Wohl VLE model"""
@@ -654,6 +654,11 @@ class TrainArgs(CommonArgs):
             self.number_of_molecules = 2
         if self.vle == "basic" and self.fugacity_balance:
             raise ValueError("Cannot use fugacity balance with basic VLE model.")
+        if self.vle == "alt_nrtl" and (self.self_activity_correction or self.self_activity_lambda > 0):
+            raise ValueError(
+                "The alt_nrtl VLE model already bakes self-consistency into its permutation-based "
+                "readout, so --self_activity_correction and --self_activity_lambda are not supported with it."
+            )
 
         # Adapt the number of molecules for reaction_solvent mode
         if self.reaction_solvent is True and self.number_of_molecules != 2:
