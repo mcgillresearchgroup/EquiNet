@@ -247,3 +247,60 @@ def predict_vle_parameters(
     preds_dict = dict(zip(names, parameters[0]))
 
     return preds_dict
+
+
+def predict_azeotrope(smiles_1: str, smiles_2: str, temperature: float = None, pressure: float = None, mesh_size: int = 101, model_path: str = None):
+    """
+    Check for azeotrope in predicted data, either in a isothermal or isobaric envelope.
+
+    Args:
+        smiles_1: SMILES string of the first component.
+        smiles_2: SMILES string of the second component.
+        temperature: Temperature in Kelvin, held fixed across the envelope. If specified, pressure must be None.
+        pressure: Pressure in Pa, held fixed across the envelope. If specified, temperature must be None.
+        mesh_size: Number of x1 points spanning [0, 1].
+        model_path: Path to a model checkpoint. Defaults to the packaged pretrained model.
+
+    Returns:
+        A tuple (contains_azeotrope, azeotrope_dict) where contains_azeotrope is a boolean indicating whether an azeotrope was found,
+        and azeotrope_dict is a dictionary with keys 'x1', 'log10P', 'T' containing the predicted azeotrope compositions, pressures, and temperatures.
+    """
+
+    if temperature is not None == pressure is not None:
+        raise ValueError("Please specify either temperature or pressure, not both.")
+
+    if temperature is not None:
+        preds_df = predict_vle_isothermal_envelope(smiles_1, smiles_2, temperature, mesh_size, model_path)
+    elif pressure is not None:
+        preds_df = predict_vle_isobaric_envelope(smiles_1, smiles_2, pressure, mesh_size, model_path)
+    else:
+        raise ValueError("Please specify either temperature or pressure.")
+
+    x1 = preds_df['x1']
+    y1 = preds_df['y1']
+    log10P = preds_df['log10P']
+    T = preds_df['T']
+
+    # Find indices where the difference changes sign
+    sign_changes = np.where(np.diff(np.sign(x1 - y1)))[0]
+    # exclude endpoints
+    sign_changes = sign_changes[1:-1]
+
+    x1_azeo = []
+    log10P_azeo = []
+    T_azeo = []
+
+    for idx in sign_changes:
+        # Linear interpolation to approximate the azeotrope composition
+        x1_azeo.append((x1[idx] + x1[idx + 1]) / 2)
+        log10P_azeo.append((log10P[idx] + log10P[idx + 1]) / 2)
+        T_azeo.append((T[idx] + T[idx + 1]) / 2)
+        
+    azeotrope_dict = {
+        'x1': x1_azeo,
+        'log10P': log10P_azeo,
+        'T': T_azeo
+    }
+    contains_azeotrope = len(x1_azeo) > 0
+
+    return contains_azeotrope, azeotrope_dict

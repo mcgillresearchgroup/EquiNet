@@ -83,6 +83,7 @@ def evaluate_predictions(preds: List[List[float]],
                 results[metric].append(metric_func(valid_targets[i], valid_preds[i],
                                                 labels=list(range(len(valid_preds[i][0])))))
             else:
+                # print(valid_targets[i], valid_preds[i])
                 results[metric].append(metric_func(valid_targets[i], valid_preds[i]))
 
     results = dict(results)
