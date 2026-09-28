@@ -374,20 +374,20 @@ class MoleculeModel(nn.Module):
                 output_2 = self.readout(torch.cat([encoding_2, encoding_2, features_batch], axis=1))
 
         if self.vle in ["wohl", "nrtl-wohl"]:
-            q_1 = nn.functional.softplus(self.wohl_q(torch.cat([encoding_1, input_temperature_batch], axis=1)))
-            q_2 = nn.functional.softplus(self.wohl_q(torch.cat([encoding_2, input_temperature_batch], axis=1)))
+            q_a = nn.functional.softplus(self.wohl_q(torch.cat([encoding_1, input_temperature_batch], axis=1)))
+            q_b = nn.functional.softplus(self.wohl_q(torch.cat([encoding_2, input_temperature_batch], axis=1)))
         if self.vle == "uniquac":
-            r1, q1 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_1, input_temperature_batch], dim=1))), 2, dim=1)
-            r2, q2 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_2, input_temperature_batch], dim=1))), 2, dim=1)
+            r_a, q_a = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_1, input_temperature_batch], dim=1))), 2, dim=1)
+            r_b, q_b = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_2, input_temperature_batch], dim=1))), 2, dim=1)
         if self.learn_uniquac_z:
             z = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(encodings))) + 4  # Ensure Z is a positive integer >= 8
             if self.self_activity_correction:
-                z1 = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_1, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
-                z2 = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_2, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
+                z_a = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_1, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
+                z_b = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_2, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
         else:
             z = self.uniquac_z
-            z1 = self.uniquac_z
-            z2 = self.uniquac_z
+            z_a = self.uniquac_z
+            z_b = self.uniquac_z
 
         if self.vle is not None and self.vp is not None: # internal VP prediction
             vp1_output = self.intrinsic_vp(torch.cat([encoding_1, input_temperature_batch], axis=1))
@@ -405,39 +405,32 @@ class MoleculeModel(nn.Module):
         if get_parameters:
             names, parameters = [], torch.empty(len(output), 0, device=self.device)
             if self.vle == "uniquac":
-                if self.learn_uniquac_z:
-                    Z = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(encodings))) + 8  # Ensure Z is a positive integer >= 8
-                else:
-                    Z = torch.full((len(output), 1), self.uniquac_z, device=self.device)
-                tau12, tau21 = torch.chunk(nn.functional.softplus(output), 2, dim=1)  # Apply softplus to ensure positive tau values
-                r1, q1 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_1, input_temperature_batch], dim=1))), 2, dim=1)
-                r2, q2 = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_2, input_temperature_batch], dim=1))), 2, dim=1)
-                act_names, act_parameters = get_uniquac_parameters(output, r1, r2, q1, q2, x_1, x_2, input_temperature_batch, Z)
+                act_names, act_parameters = get_uniquac_parameters(output, r_a, r_b, q_a, q_b, x_1, x_2, input_temperature_batch, z)
                 names += act_names
                 parameters = torch.cat([parameters, act_parameters], dim=1)
                 
                 if self.self_activity_correction:
-                    act1_names, act1_parameters = get_uniquac_parameters(output, r1, r2, q1, q2, x_1, x_1, input_temperature_batch, Z, 1)
-                    act2_names, act2_parameters = get_uniquac_parameters(output, r1, r2, q1, q2, x_2, x_2, input_temperature_batch, Z, 2)
+                    act1_names, act1_parameters = get_uniquac_parameters(output, r_a, r_a, q_a, q_a, x_1, x_1, input_temperature_batch, z_a, 1)
+                    act2_names, act2_parameters = get_uniquac_parameters(output, r_b, r_b, q_b, q_b, x_2, x_2, input_temperature_batch, z_b, 2)
                     names += act1_names + act2_names
                     parameters = torch.cat([parameters, act1_parameters, act2_parameters], dim=1)
 
             elif self.vle == "wohl":
-                act_names, act_parameters = get_wohl_parameters(output, self.wohl_order, q_1, q_2)
+                act_names, act_parameters = get_wohl_parameters(output, self.wohl_order, q_a, q_b)
                 names += act_names
                 parameters = torch.cat([parameters, act_parameters], axis=1)
                 if self.self_activity_correction:
-                    act1_names, act1_parameters = get_wohl_parameters(output_1, self.wohl_order, q_1, q_1, 1)
-                    act2_names, act2_parameters = get_wohl_parameters(output_2, self.wohl_order, q_2, q_2, 2)
+                    act1_names, act1_parameters = get_wohl_parameters(output_1, self.wohl_order, q_a, q_a, 1)
+                    act2_names, act2_parameters = get_wohl_parameters(output_2, self.wohl_order, q_b, q_b, 2)
                     names += act1_names + act2_names
                     parameters = torch.cat([parameters, act1_parameters, act2_parameters], axis=1)
             elif self.vle == "nrtl-wohl":
-                act_names, act_parameters = get_nrtl_wohl_parameters(output, self.wohl_order, q_1, q_2)
+                act_names, act_parameters = get_nrtl_wohl_parameters(output, self.wohl_order, q_a, q_b)
                 names += act_names
                 parameters = torch.cat([parameters, act_parameters], axis=1)
                 if self.self_activity_correction:
-                    act1_names, act1_parameters = get_nrtl_wohl_parameters(output_1, self.wohl_order, q_1, q_1, 1)
-                    act2_names, act2_parameters = get_nrtl_wohl_parameters(output_2, self.wohl_order, q_2, q_2, 2)
+                    act1_names, act1_parameters = get_nrtl_wohl_parameters(output_1, self.wohl_order, q_a, q_a, 1)
+                    act2_names, act2_parameters = get_nrtl_wohl_parameters(output_2, self.wohl_order, q_b, q_b, 2)
                     names += act1_names + act2_names
                     parameters = torch.cat([parameters, act1_parameters, act2_parameters], axis=1)
             elif self.vle == "nrtl":
@@ -476,174 +469,88 @@ class MoleculeModel(nn.Module):
             regularization = 0
         elif self.vle is not None:
             if self.vle == "activity":
-                ln_gamma_1, ln_gamma_2 = forward_vle_activity(output=output)
+                ln_gamma_1_ab, ln_gamma_2_ab = forward_vle_activity(output=output)
                 if self.self_activity_correction or self.self_activity_lambda > 0:
-                    ln_gamma_1_1, ln_gamma_2_1 = forward_vle_activity(output=output_1)
-                    ln_gamma_1_2, ln_gamma_2_2 = forward_vle_activity(output=output_2)
+                    ln_gamma_1_aa, ln_gamma_2_aa = forward_vle_activity(output=output_1)
+                    ln_gamma_1_bb, ln_gamma_2_bb = forward_vle_activity(output=output_2)
             elif self.vle == "wohl":
                 # AB (standard pair)
-                ln1_ab, ln2_ab, gE_ab = wohl_ln_gamma_and_gE(
-                    output, x_1, x_2, q_1, q_2, self.wohl_order
-                )
+                ln_gamma_1_ab, ln_gamma_2_ab, gE_ab = wohl_ln_gamma_and_gE(output, x_1, x_2, q_a, q_b, self.wohl_order)
 
                 if self.self_activity_correction or self.self_activity_lambda > 0:
                     # AA (self of component 1)
-                    ln1_aa, ln2_aa, gE_aa = wohl_ln_gamma_and_gE(
-                        output_1, x_1, x_2, q_1, q_1, self.wohl_order
-                    )
+                    ln_gamma_1_aa, ln_gamma_2_aa, gE_aa = wohl_ln_gamma_and_gE(output_1, x_1, x_2, q_a, q_a, self.wohl_order)
                     # BB (self of component 2)
-                    ln1_bb, ln2_bb, gE_bb = wohl_ln_gamma_and_gE(
-                        output_2, x_1, x_2, q_2, q_2, self.wohl_order
-                    )
-
-                    # Same identities you used for NRTL (applied verbatim)
-                    ln_gamma_1 = (
-                        ln1_ab
-                        - x_2 * gE_aa
-                        - x_1 * ln1_aa
-                        + x_2 * gE_bb
-                        - x_2 * ln1_bb
-                    )
-                    ln_gamma_2 = (
-                        ln2_ab
-                        + x_1 * gE_aa
-                        - x_1 * ln2_aa
-                        - x_1 * gE_bb
-                        - x_2 * ln2_bb
-                    )
-
-                    # gE-based regularizer (match your NRTL path)
-                    if self.self_activity_lambda > 0:
-                        regularization = self.self_activity_lambda * (
-                            gE_aa.pow(2).sum() + gE_bb.pow(2).sum()
-                        )
-                else:
-                    ln_gamma_1, ln_gamma_2 = ln1_ab, ln2_ab
+                    ln_gamma_1_bb, ln_gamma_2_bb, gE_bb = wohl_ln_gamma_and_gE(output_2, x_1, x_2, q_b, q_b, self.wohl_order)
 
             elif self.vle == "nrtl":
-                # AB (uses equivariant readout you already applied to `output`)
-                ln1_ab, ln2_ab, gE_ab = nrtl_ln_gamma_and_gE(output, x_1, x_2)
+                # AB (standard pair)
+                ln_gamma_1_ab, ln_gamma_2_ab, gE_ab = nrtl_ln_gamma_and_gE(output, x_1, x_2)
 
                 if self.self_activity_correction or self.self_activity_lambda > 0:
-                    # AA and BB (NO equivariance needed)
-                    ln1_aa, ln2_aa, gE_aa = nrtl_ln_gamma_and_gE(output_1, x_1, x_2)
-                    ln1_bb, ln2_bb, gE_bb = nrtl_ln_gamma_and_gE(output_2, x_1, x_2)
-
-                    # Your notebook identities (three −, one + in each)
-                    # NOTE: gE_* are gE/RT (dimensionless).
-                    ln_gamma_1 = (
-                        ln1_ab
-                        - x_2 * gE_aa
-                        - x_1 * ln1_aa
-                        + x_2 * gE_bb
-                        - x_2 * ln1_bb
-                    )
-                    ln_gamma_2 = (
-                        ln2_ab
-                        + x_1 * gE_aa
-                        - x_1 * ln2_aa
-                        - x_1 * gE_bb
-                        - x_2 * ln2_bb
-                    )
-
-                    # Optional regularizer (at gE-level)
-                    if self.self_activity_lambda > 0:
-                        regularization = self.self_activity_lambda * (gE_aa.pow(2).sum() + gE_bb.pow(2).sum())
-                else:
-                    # No self-correction → use AB closed-form lnγ directly
-                    ln_gamma_1, ln_gamma_2 = ln1_ab, ln2_ab
+                    # AA (self of component 1)
+                    ln_gamma_1_aa, ln_gamma_2_aa, gE_aa = nrtl_ln_gamma_and_gE(output_1, x_1, x_2)
+                    # BB (self of component 2)
+                    ln_gamma_1_bb, ln_gamma_2_bb, gE_bb = nrtl_ln_gamma_and_gE(output_2, x_1, x_2)
 
             elif self.vle == "nrtl-wohl":
                 # AB (hybrid)
-                ln1_ab, ln2_ab, gE_ab = nrtl_wohl_ln_gamma_and_gE(
-                    output, x_1, x_2, q_1, q_2, self.wohl_order
-                )
+                ln_gamma_1_ab, ln_gamma_2_ab, gE_ab = nrtl_wohl_ln_gamma_and_gE(output, x_1, x_2, q_a, q_b, self.wohl_order)
 
                 if self.self_activity_correction or self.self_activity_lambda > 0:
                     # AA: NRTL-Wohl with (q1,q1)
-                    ln1_aa, ln2_aa, gE_aa = nrtl_wohl_ln_gamma_and_gE(
-                        output_1, x_1, x_2, q_1, q_1, self.wohl_order
-                    )
+                    ln_gamma_1_aa, ln_gamma_2_aa, gE_aa = nrtl_wohl_ln_gamma_and_gE(output_1, x_1, x_2, q_a, q_a, self.wohl_order)
                     # BB: NRTL-Wohl with (q2,q2)
-                    ln1_bb, ln2_bb, gE_bb = nrtl_wohl_ln_gamma_and_gE(
-                        output_2, x_1, x_2, q_2, q_2, self.wohl_order
-                    )
-
-                    # Same AB−(AA,BB) identities as NRTL
-                    ln_gamma_1 = (
-                        ln1_ab
-                        - x_2 * gE_aa
-                        - x_1 * ln1_aa
-                        + x_2 * gE_bb
-                        - x_2 * ln1_bb
-                    )
-                    ln_gamma_2 = (
-                        ln2_ab
-                        + x_1 * gE_aa
-                        - x_1 * ln2_aa
-                        - x_1 * gE_bb
-                        - x_2 * ln2_bb
-                    )
-
-                    if self.self_activity_lambda > 0:
-                        regularization = self.self_activity_lambda * (
-                            gE_aa.pow(2).sum() + gE_bb.pow(2).sum()
-                        )
-                else:
-                    ln_gamma_1, ln_gamma_2 = ln1_ab, ln2_ab
+                    ln_gamma_1_bb, ln_gamma_2_bb, gE_bb = nrtl_wohl_ln_gamma_and_gE(output_2, x_1, x_2, q_b, q_b, self.wohl_order)
 
             elif self.vle == "uniquac":
-                ln1_ab, ln2_ab, gE_ab = uniquac_ln_gamma_and_gE(output, q1, q2, r1, r2, x_1, x_2, z)
+                ln_gamma_1_ab, ln_gamma_2_ab, gE_ab = uniquac_ln_gamma_and_gE(output, q_a, q_b, r_a, r_b, x_1, x_2, z)
                 
                 if self.self_activity_correction or self.self_activity_lambda > 0:
-                    ln1_aa, ln2_aa, gE_aa = uniquac_ln_gamma_and_gE(output, q1, q1, r1, r1, x_1, x_2, z1)
-                    ln1_bb, ln2_bb, gE_bb = uniquac_ln_gamma_and_gE(output, q2, q2, r2, r2, x_1, x_2, z2)
-
-                    ln_gamma_1 = (
-                        ln1_ab
-                        - x_2 * gE_aa
-                        - x_1 * ln1_aa
-                        + x_2 * gE_bb
-                        - x_2 * ln1_bb
-                    )
-                    ln_gamma_2 = (
-                        ln2_ab
-                        + x_1 * gE_aa
-                        - x_1 * ln2_aa
-                        - x_1 * gE_bb
-                        - x_2 * ln2_bb
-                    )
-                    # Optional regularizer (at gE-level)
-                    if self.self_activity_lambda > 0:
-                        regularization = self.self_activity_lambda * (gE_aa.pow(2).sum() + gE_bb.pow(2).sum())
-                else:
-                    # No self-correction → use AB closed-form lnγ directly
-                    ln_gamma_1, ln_gamma_2 = ln1_ab, ln2_ab
-
+                    ln_gamma_1_aa, ln_gamma_2_aa, gE_aa = uniquac_ln_gamma_and_gE(output, q_a, q_a, r_a, r_a, x_1, x_2, z_a)
+                    ln_gamma_1_bb, ln_gamma_2_bb, gE_bb = uniquac_ln_gamma_and_gE(output, q_b, q_b, r_b, r_b, x_1, x_2, z_b)
 
             elif self.vle == "freestyle":
-                output = output - x_1 * output_1 - x_2 * output_2  # gE
                 ln_gamma_1, ln_gamma_2 = forward_vle_freestyle(output=output, features=features_batch)
-                if self.self_activity_lambda > 0:
+                if self.self_activity_correction or self.self_activity_lambda > 0:
                         regularization = self.self_activity_lambda * (
                             output_1.pow(2).sum() + output_2.pow(2).sum()
                         )
             else:
                 raise ValueError(f"Unsupported VLE model {self.vle}.")
-            
-            if self.self_activity_correction and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac"]:
-                ln_gamma_1 = ln_gamma_1 - x_1 * ln_gamma_1_1 - x_2 * ln_gamma_1_2
-                ln_gamma_2 = ln_gamma_2 - x_1 * ln_gamma_2_1 - x_2 * ln_gamma_2_2
-            if self.self_activity_lambda > 0 and self.vle not in ["nrtl", "wohl", "nrtl-wohl", "freestyle", "uniquac"]:
-                regularization = self.self_activity_lambda * (
-                    torch.sum(ln_gamma_1_1**2) + torch.sum(ln_gamma_1_2**2) +
-                    torch.sum(ln_gamma_2_1**2) + torch.sum(ln_gamma_2_2**2)
-                )
 
-            # create output
+            # Self Activity Corrections
+            if self.self_activity_correction:
+                if self.vle == "activity":
+                    ln_gamma_1 = ln_gamma_1 - x_1 * ln_gamma_1_aa - x_2 * ln_gamma_1_bb
+                    ln_gamma_2 = ln_gamma_2 - x_1 * ln_gamma_2_aa - x_2 * ln_gamma_2_bb
+                elif self.vle == "freestyle":
+                    output = output - x_1 * output_1 - x_2 * output_2  # gE
+                    ln_gamma_1, ln_gamma_2 = forward_vle_freestyle(output=output, features=features_batch) # overwrites ln_gamma_1 and ln_gamma_2
+                elif self.vle in ["nrtl", "wohl", "nrtl-wohl", "uniquac"]:
+                    ln_gamma_1 = (ln_gamma_1_ab - x_2 * gE_aa - x_1 * ln_gamma_1_aa + x_2 * gE_bb - x_2 * ln_gamma_1_bb)
+                    ln_gamma_2 = (ln_gamma_2_ab + x_1 * gE_aa - x_1 * ln_gamma_2_aa - x_1 * gE_bb - x_2 * ln_gamma_2_bb)
+                else:
+                    raise ValueError(f"Unsupported VLE model {self.vle} for self activity correction.")
+            else:
+                ln_gamma_1, ln_gamma_2 = ln_gamma_1_ab, ln_gamma_2_ab
+
+            if self.self_activity_lambda > 0:
+                if self.vle in ["activity", "nrtl", "wohl", "nrtl-wohl", "uniquac"]:
+                    regularization = self.self_activity_lambda * (
+                        ln_gamma_1_aa.pow(2).sum() + ln_gamma_1_bb.pow(2).sum() +
+                        ln_gamma_2_aa.pow(2).sum() + ln_gamma_2_bb.pow(2).sum()
+                    )
+                elif self.vle == "freestyle": # uses gE for regularization
+                    regularization = self.self_activity_lambda * (
+                        output_1.pow(2).sum() + output_2.pow(2).sum()
+                    )
+                else:
+                    raise ValueError(f"Unsupported VLE model {self.vle} for self activity regularization.")
+
+            # Modified Raoults law create output
             lnp1sat = log10p1sat * np.log(10)
             lnp2sat = log10p2sat * np.log(10)
-            # use clamped x for logs
             ln_P1 = lnp1sat + torch.log(x_1) + ln_gamma_1
             ln_P2 = lnp2sat + torch.log(x_2) + ln_gamma_2
             lnP = torch.logaddexp(ln_P1, ln_P2)
@@ -652,7 +559,7 @@ class MoleculeModel(nn.Module):
             log10P = lnP / np.log(10)
 
             output = torch.cat([y_1, y_2, log10P, ln_gamma_1, ln_gamma_2, log10p1sat, log10p2sat], axis=1)
-        # VP
+        # VP output without VLE
         if self.vp is not None and self.vle is None:
             output = forward_vp(self.vp, output, output_temperature_batch, Tc, log10Pc)
         
