@@ -410,10 +410,9 @@ def forward_vle_freestyle(
     return ln_gamma_1, ln_gamma_2
 
 def unscale_vle_parameters(
-        parameters: np.ndarray,
-        target_scaler,
+        vle_parameters: np.ndarray ,
         hybrid_model_features_scaler,
-        vle: str,
+        vle, wohl_order,
 ):
     # none of the current methods are affected by scaling
-    return parameters
+    return vle_parameters
