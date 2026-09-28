@@ -381,7 +381,7 @@ class MoleculeModel(nn.Module):
             r_b, q_b = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_2, input_temperature_batch], dim=1))), 2, dim=1)
         if self.learn_uniquac_z:
             if self.binary_equivariant:
-                z = binary_equivariant_readout(encoding_1, encoding_2, features_batch, self.uniquac_z_ffn) + 8
+                z = nn.functional.softplus(binary_equivariant_readout(encoding_1, encoding_2, features_batch, self.uniquac_z_ffn)) + 8
             else:
                 z = nn.functional.softplus(self.uniquac_z_ffn(encodings)) + 8  # Ensure Z is > 8
             if self.self_activity_correction or self.self_activity_lambda > 0:
