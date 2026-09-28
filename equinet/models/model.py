@@ -385,9 +385,9 @@ class MoleculeModel(nn.Module):
                 z_a = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_1, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
                 z_b = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_2, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
         else:
-            z = torch.tensor(self.uniquac_z, device=self.device)
-            z_a = torch.tensor(self.uniquac_z, device=self.device)
-            z_b = torch.tensor(self.uniquac_z, device=self.device)
+            z = torch.full((features_batch.shape[0], 1), float(self.uniquac_z), device=self.device)
+            z_a = z
+            z_b = z
 
         if self.vle is not None and self.vp is not None: # internal VP prediction
             vp1_output = self.intrinsic_vp(torch.cat([encoding_1, input_temperature_batch], axis=1))
