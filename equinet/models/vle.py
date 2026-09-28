@@ -324,7 +324,7 @@ def forward_vle_uniquac(
     VLE output calculation for the UNIQUAC model
     """
     # (output, q1, q2, r1, r2, x_1, x_2, z)
-    lntau12, lntau21 = torch.chunk(output, 6, dim=1)
+    lntau12, lntau21 = torch.chunk(output, 2, dim=1)
     tau12 = torch.exp(lntau12)
     tau21 = torch.exp(lntau21)
     
@@ -354,15 +354,10 @@ def get_uniquac_parameters(
     Z: torch.Tensor,
     molecule_id: int = None
 ):
-    tau12, tau21 = torch.chunk(output, 2, dim=1)
+    lntau12, lntau21 = torch.chunk(output, 2, dim=1)
     # Apply softplus to tau values
-    tau12 = F.softplus(tau12)
-    tau21 = F.softplus(tau21)
-    # Ensure r and q values are positive and not too small
-    r1 = torch.clamp(r1, min=0.1, max=100)
-    r2 = torch.clamp(r2, min=0.1, max=100)
-    q1 = torch.clamp(q1, min=0.1, max=100)
-    q2 = torch.clamp(q2, min=0.1, max=100)
+    tau12 = torch.exp(lntau12)
+    tau21 = torch.exp(lntau21)
 
     # Calculate structural parameters
     l1 = (Z / 2) * (r1 - q1) - (r1 - 1)
@@ -373,10 +368,6 @@ def get_uniquac_parameters(
     theta2 = x_2 * q2 / (x_1 * q1 + x_2 * q2)
     phi1 = x_1 * r1 / (x_1 * r1 + x_2 * r2)
     phi2 = x_2 * r2 / (x_1 * r1 + x_2 * r2)
-
-    # Calculate taus using the delta_u values
-    R = 8.314  # J/(mol·K)
-    
 
     names = ['tau12', 'tau21', 'r1', 'r2', 'q1', 'q2', 'theta1', 'theta2', 'phi1', 'phi2', 'l1', 'l2', 'Z']
     parameters = torch.cat([tau12, tau21, r1, r2, q1, q2, theta1, theta2, phi1, phi2, l1, l2, Z], dim=1)
