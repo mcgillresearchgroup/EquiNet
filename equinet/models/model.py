@@ -200,7 +200,7 @@ class MoleculeModel(nn.Module):
             )
             if self.learn_uniquac_z:
                 self.uniquac_z_ffn = build_ffn(
-                    first_linear_dim=2*self.hidden_size,
+                    first_linear_dim=2*self.hidden_size + 1,  # +1 for temperature
                     hidden_size=args.ffn_hidden_size,
                     num_layers=args.ffn_num_layers,
                     output_size=1,  # Z
@@ -381,12 +381,12 @@ class MoleculeModel(nn.Module):
             r_b, q_b = torch.chunk(nn.functional.softplus(self.uniquac_pure_ffn(torch.cat([encoding_2, input_temperature_batch], dim=1))), 2, dim=1)
         if self.learn_uniquac_z:
             if self.binary_equivariant:
-                z = binary_equivariant_readout(encoding_1, encoding_2, features_batch, self.uniquac_z_ffn)
+                z = binary_equivariant_readout(encoding_1, encoding_2, features_batch, self.uniquac_z_ffn) + 8
             else:
-                z = nn.functional.softplus(self.uniquac_z_ffn(encodings)) + 8  # Ensure Z is a positive integer > 8
-            if self.self_activity_correction:
-                z_a = nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_1, encoding_1, input_temperature_batch], axis=1))) + 8  # Ensure Z is a positive integer > 8
-                z_b = nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_2, encoding_2, input_temperature_batch], axis=1))) + 8  # Ensure Z is a positive integer > 8
+                z = nn.functional.softplus(self.uniquac_z_ffn(encodings)) + 8  # Ensure Z is > 8
+            if self.self_activity_correction or self.self_activity_lambda > 0:
+                z_a = nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_1, encoding_1, input_temperature_batch], axis=1))) + 8  # Ensure Z is > 8
+                z_b = nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_2, encoding_2, input_temperature_batch], axis=1))) + 8  # Ensure Z is  > 8
         else:
             z = torch.full((features_batch.shape[0], 1), float(self.uniquac_z), device=self.device)
             z_a = z
@@ -413,8 +413,8 @@ class MoleculeModel(nn.Module):
                 parameters = torch.cat([parameters, act_parameters], dim=1)
                 
                 if self.self_activity_correction:
-                    act1_names, act1_parameters = get_uniquac_parameters(output_1, r_a, r_a, q_a, q_a, x_1, x_1, input_temperature_batch, z_a, 1)
-                    act2_names, act2_parameters = get_uniquac_parameters(output_2, r_b, r_b, q_b, q_b, x_2, x_2, input_temperature_batch, z_b, 2)
+                    act1_names, act1_parameters = get_uniquac_parameters(output_1, r_a, r_a, q_a, q_a, x_1, x_2, input_temperature_batch, z_a, 1)
+                    act2_names, act2_parameters = get_uniquac_parameters(output_2, r_b, r_b, q_b, q_b, x_1, x_2, input_temperature_batch, z_b, 2)
                     names += act1_names + act2_names
                     parameters = torch.cat([parameters, act1_parameters, act2_parameters], dim=1)
 
