@@ -385,9 +385,9 @@ class MoleculeModel(nn.Module):
                 z_a = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_1, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
                 z_b = torch.floor(nn.functional.softplus(self.uniquac_z_ffn(torch.cat([encoding_2, input_temperature_batch], axis=1)))) + 4  # Ensure Z is a positive integer >= 8
         else:
-            z = self.uniquac_z
-            z_a = self.uniquac_z
-            z_b = self.uniquac_z
+            z = torch.tensor(self.uniquac_z, device=self.device)
+            z_a = torch.tensor(self.uniquac_z, device=self.device)
+            z_b = torch.tensor(self.uniquac_z, device=self.device)
 
         if self.vle is not None and self.vp is not None: # internal VP prediction
             vp1_output = self.intrinsic_vp(torch.cat([encoding_1, input_temperature_batch], axis=1))
@@ -511,19 +511,16 @@ class MoleculeModel(nn.Module):
                     ln_gamma_1_bb, ln_gamma_2_bb, gE_bb = uniquac_ln_gamma_and_gE(output, q_b, q_b, r_b, r_b, x_1, x_2, z_b)
 
             elif self.vle == "freestyle":
-                ln_gamma_1, ln_gamma_2 = forward_vle_freestyle(output=output, features=features_batch)
-                if self.self_activity_correction or self.self_activity_lambda > 0:
-                        regularization = self.self_activity_lambda * (
-                            output_1.pow(2).sum() + output_2.pow(2).sum()
-                        )
+                if not self.self_activity_correction:
+                    ln_gamma_1_ab, ln_gamma_2_ab = forward_vle_freestyle(output=output, features=features_batch)
             else:
                 raise ValueError(f"Unsupported VLE model {self.vle}.")
 
             # Self Activity Corrections
             if self.self_activity_correction:
                 if self.vle == "activity":
-                    ln_gamma_1 = ln_gamma_1 - x_1 * ln_gamma_1_aa - x_2 * ln_gamma_1_bb
-                    ln_gamma_2 = ln_gamma_2 - x_1 * ln_gamma_2_aa - x_2 * ln_gamma_2_bb
+                    ln_gamma_1 = ln_gamma_1_ab - x_1 * ln_gamma_1_aa - x_2 * ln_gamma_1_bb
+                    ln_gamma_2 = ln_gamma_2_ab - x_1 * ln_gamma_2_aa - x_2 * ln_gamma_2_bb
                 elif self.vle == "freestyle":
                     output = output - x_1 * output_1 - x_2 * output_2  # gE
                     ln_gamma_1, ln_gamma_2 = forward_vle_freestyle(output=output, features=features_batch) # overwrites ln_gamma_1 and ln_gamma_2
